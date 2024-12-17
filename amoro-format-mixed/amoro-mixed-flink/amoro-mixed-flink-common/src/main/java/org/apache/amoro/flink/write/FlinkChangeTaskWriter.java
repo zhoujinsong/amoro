@@ -27,6 +27,7 @@ import org.apache.amoro.table.KeyedTable;
 import org.apache.amoro.table.PrimaryKeySpec;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.utils.JoinedRowData;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
@@ -42,13 +43,12 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * task writer for {@link KeyedTable#changeTable()} ()}. Dev should make sure outputFileFactory
- * write to change table's location
+ * task writer for {@link KeyedTable#changeTable()}. Dev should make sure outputFileFactory write to
+ * change table's location
  */
 public class FlinkChangeTaskWriter extends ChangeTaskWriter<RowData> {
 
   private final RowDataWrapper wrapper;
-  private final boolean upsert;
   private final Set<PrimaryKeyData> hasUpdateBeforeKeys = new HashSet<>();
 
   public FlinkChangeTaskWriter(
@@ -61,8 +61,7 @@ public class FlinkChangeTaskWriter extends ChangeTaskWriter<RowData> {
       Schema schema,
       RowType flinkSchema,
       PartitionSpec spec,
-      PrimaryKeySpec primaryKeySpec,
-      boolean upsert) {
+      PrimaryKeySpec primaryKeySpec) {
     super(
         format,
         appenderFactory,
@@ -75,7 +74,6 @@ public class FlinkChangeTaskWriter extends ChangeTaskWriter<RowData> {
         primaryKeySpec,
         false);
     this.wrapper = new RowDataWrapper(flinkSchema, schema.asStruct());
-    this.upsert = upsert;
   }
 
   @Override
@@ -85,17 +83,13 @@ public class FlinkChangeTaskWriter extends ChangeTaskWriter<RowData> {
 
   @Override
   protected RowData appendMetaColumns(RowData data, Long fileOffset) {
-    return new JoinedRowData(data, GenericRowData.of(fileOffset));
+    return new JoinedRowData(
+        data, GenericRowData.of(fileOffset, StringData.fromString(action(data).name())));
   }
 
   @Override
   public void write(RowData row) throws IOException {
     processMultiUpdateAfter(row);
-    if (upsert && RowKind.INSERT.equals(row.getRowKind())) {
-      row.setRowKind(RowKind.DELETE);
-      super.write(row);
-      row.setRowKind(RowKind.INSERT);
-    }
     super.write(row);
   }
 
