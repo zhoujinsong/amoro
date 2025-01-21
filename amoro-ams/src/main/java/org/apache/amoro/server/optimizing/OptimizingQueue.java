@@ -121,9 +121,16 @@ public class OptimizingQueue extends PersistentBase {
     if (tableRuntime.isOptimizingEnabled()) {
       tableRuntime.resetTaskQuotas(
           System.currentTimeMillis() - AmoroServiceConstants.QUOTA_LOOK_BACK_TIME);
+      // Close the committing process to avoid duplicate commit on the table.
+      if (tableRuntime.getOptimizingStatus() == OptimizingStatus.COMMITTING) {
+        OptimizingProcess process = tableRuntime.getOptimizingProcess();
+        if (process != null) {
+          process.close();
+        }
+      }
       if (!tableRuntime.getOptimizingStatus().isProcessing()) {
         scheduler.addTable(tableRuntime);
-      } else if (tableRuntime.getOptimizingStatus() != OptimizingStatus.COMMITTING) {
+      } else {
         tableQueue.offer(new TableOptimizingProcess(tableRuntime));
       }
     } else {
@@ -591,10 +598,10 @@ public class OptimizingQueue extends PersistentBase {
               "{} failed to persist process completed, will retry next commit",
               tableRuntime.getTableIdentifier(),
               e);
-        } catch (Exception e) {
+        } catch (Throwable t) {
           LOG.error("{} Commit optimizing failed ", tableRuntime.getTableIdentifier(), e);
           status = ProcessStatus.FAILED;
-          failedReason = ExceptionUtil.getErrorMessage(e, 4000);
+          failedReason = ExceptionUtil.getErrorMessage(t, 4000);
           endTime = System.currentTimeMillis();
           persistAndSetCompleted(false);
         }
