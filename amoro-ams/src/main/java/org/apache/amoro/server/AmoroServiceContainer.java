@@ -27,7 +27,10 @@ import org.apache.amoro.api.AmoroTableMetastore;
 import org.apache.amoro.api.OptimizingService;
 import org.apache.amoro.config.ConfigHelpers;
 import org.apache.amoro.config.Configurations;
+import org.apache.amoro.config.shade.utils.ConfigShadeUtils;
 import org.apache.amoro.exception.AmoroRuntimeException;
+import org.apache.amoro.server.catalog.CatalogManager;
+import org.apache.amoro.server.catalog.DefaultCatalogManager;
 import org.apache.amoro.server.dashboard.DashboardServer;
 import org.apache.amoro.server.dashboard.JavalinJsonMapper;
 import org.apache.amoro.server.dashboard.response.ErrorResponse;
@@ -41,8 +44,10 @@ import org.apache.amoro.server.persistence.SqlSessionFactoryProvider;
 import org.apache.amoro.server.resource.ContainerMetadata;
 import org.apache.amoro.server.resource.OptimizerManager;
 import org.apache.amoro.server.resource.ResourceContainers;
+import org.apache.amoro.server.table.DefaultTableManager;
 import org.apache.amoro.server.table.DefaultTableService;
 import org.apache.amoro.server.table.RuntimeHandlerChain;
+import org.apache.amoro.server.table.TableManager;
 import org.apache.amoro.server.table.TableService;
 import org.apache.amoro.server.table.executor.AsyncTableExecutors;
 import org.apache.amoro.server.terminal.TerminalManager;
@@ -92,7 +97,9 @@ public class AmoroServiceContainer {
 
   private final HighAvailabilityContainer haContainer;
   private DataSource dataSource;
-  private DefaultTableService tableService;
+  private CatalogManager catalogManager;
+  private TableManager tableManager;
+  private TableService tableService;
   private DefaultOptimizingService optimizingService;
   private TerminalManager terminalManager;
   private Configurations serviceConfig;
@@ -146,8 +153,12 @@ public class AmoroServiceContainer {
     EventsManager.getInstance();
     MetricManager.getInstance();
 
-    tableService = new DefaultTableService(serviceConfig);
-    optimizingService = new DefaultOptimizingService(serviceConfig, tableService);
+    catalogManager = new DefaultCatalogManager(serviceConfig);
+    tableManager = new DefaultTableManager(serviceConfig, catalogManager);
+
+    tableService = new DefaultTableService(serviceConfig, catalogManager);
+    optimizingService =
+        new DefaultOptimizingService(serviceConfig, catalogManager, tableManager, tableService);
 
     LOG.info("Setting up AMS table executors...");
     AsyncTableExecutors.getInstance().setup(tableService, serviceConfig);
@@ -164,7 +175,8 @@ public class AmoroServiceContainer {
     addHandlerChain(AsyncTableExecutors.getInstance().getTagsAutoCreatingExecutor());
     tableService.initialize();
     LOG.info("AMS table service have been initialized");
-    terminalManager = new TerminalManager(serviceConfig, tableService);
+    tableManager.setTableService(tableService);
+    terminalManager = new TerminalManager(serviceConfig, catalogManager);
 
     initThriftService();
     startThriftService();
@@ -240,8 +252,9 @@ public class AmoroServiceContainer {
 
   private void initHttpService() {
     DashboardServer dashboardServer =
-        new DashboardServer(serviceConfig, tableService, optimizingService, terminalManager);
-    RestCatalogService restCatalogService = new RestCatalogService(tableService);
+        new DashboardServer(
+            serviceConfig, catalogManager, tableManager, optimizingService, terminalManager);
+    RestCatalogService restCatalogService = new RestCatalogService(catalogManager, tableManager);
 
     httpServer =
         Javalin.create(
@@ -333,7 +346,7 @@ public class AmoroServiceContainer {
         new AmoroTableMetastore.Processor<>(
             ThriftServiceProxy.createProxy(
                 AmoroTableMetastore.Iface.class,
-                new TableManagementService(tableService),
+                new TableManagementService(catalogManager, tableManager),
                 AmoroRuntimeException::normalizeCompatibly));
     tableManagementServer =
         createThriftServer(
@@ -442,6 +455,8 @@ public class AmoroServiceContainer {
       // If same configurations in files and environment variables, environment variables have
       // higher priority.
       expandedConfigurationMap.putAll(envConfig);
+      // Decrypt the sensitive configurations if specified
+      expandedConfigurationMap = ConfigShadeUtils.decryptConfig(expandedConfigurationMap);
       serviceConfig = Configurations.fromObjectMap(expandedConfigurationMap);
       AmoroManagementConfValidator.validateConfig(serviceConfig);
       dataSource = DataSourceFactory.createDataSource(serviceConfig);
@@ -516,7 +531,8 @@ public class AmoroServiceContainer {
   }
 
   @SuppressWarnings("unchecked")
-  private void expandConfigMap(
+  @VisibleForTesting
+  public static void expandConfigMap(
       Map<String, Object> config, String prefix, Map<String, Object> result) {
     for (Map.Entry<String, Object> entry : config.entrySet()) {
       String key = entry.getKey();
@@ -534,6 +550,11 @@ public class AmoroServiceContainer {
   @VisibleForTesting
   public TableService getTableService() {
     return this.tableService;
+  }
+
+  @VisibleForTesting
+  public CatalogManager getCatalogManager() {
+    return this.catalogManager;
   }
 
   @VisibleForTesting

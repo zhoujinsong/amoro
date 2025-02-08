@@ -91,13 +91,25 @@ ams:
   table-manifest-io:
     thread-count: 20
 
+  catalog-meta-cache:
+    expiration-interval: 60s
+
+  # Support for encrypted sensitive configuration items
+  shade:
+    identifier: default # Built-in support for default/base64. Defaults to "default", indicating no encryption
+    sensitive-keywords: admin-password;database.password
+
+  overview-cache:
+    refresh-interval: 3min          # 3 min
+    max-size: 3360                # Keep 7 days history by default, 7 * 24 * 60 / 3 = 3360
+
   database:
     type: derby
     jdbc-driver-class: org.apache.derby.jdbc.EmbeddedDriver
     url: jdbc:derby:/root/amoro/derby-persistent;create=true
     connection-pool-max-total: 20
     connection-pool-max-idle: 16
-    connection-pool-max-wait-millis: 1000
+    connection-pool-max-wait-millis: 30000
 
 #  MySQL database configuration.
 #  database:
@@ -109,7 +121,7 @@ ams:
 #    auto-create-tables: true
 #    connection-pool-max-total: 20
 #    connection-pool-max-idle: 16
-#    connection-pool-max-wait-millis: 1000
+#    connection-pool-max-wait-millis: 30000
 
 #  Postgres database configuration.
 #  database:
@@ -121,7 +133,7 @@ ams:
 #    auto-create-tables: true
 #    connection-pool-max-total: 20
 #    connection-pool-max-idle: 16
-#    connection-pool-max-wait-millis: 1000
+#    connection-pool-max-wait-millis: 30000
 
   terminal:
     backend: local

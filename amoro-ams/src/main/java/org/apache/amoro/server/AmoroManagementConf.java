@@ -51,6 +51,12 @@ public class AmoroManagementConf {
           .defaultValue("admin")
           .withDescription("The administrator password");
 
+  public static final ConfigOption<Duration> CATALOG_META_CACHE_EXPIRATION_INTERVAL =
+      ConfigOptions.key("catalog-meta-cache.expiration-interval")
+          .durationType()
+          .defaultValue(Duration.ofSeconds(60))
+          .withDescription("TTL for catalog metadata.");
+
   public static final ConfigOption<Integer> TABLE_MANIFEST_IO_THREAD_COUNT =
       ConfigOptions.key("table-manifest-io.thread-count")
           .intType()
@@ -282,6 +288,18 @@ public class AmoroManagementConf {
           .withDescription(
               "The number of hours that self-optimizing runtime data expire interval.");
 
+  public static final ConfigOption<Duration> OVERVIEW_CACHE_REFRESH_INTERVAL =
+      ConfigOptions.key("overview-cache.refresh-interval")
+          .durationType()
+          .defaultValue(Duration.ofSeconds(180))
+          .withDescription("Interval for refreshing overview cache.");
+
+  public static final ConfigOption<Integer> OVERVIEW_CACHE_MAX_SIZE =
+      ConfigOptions.key("overview-cache.max-size")
+          .intType()
+          .defaultValue(3360)
+          .withDescription("Max size of overview cache.");
+
   public static final ConfigOption<String> DB_TYPE =
       ConfigOptions.key("database.type")
           .stringType()
@@ -333,7 +351,7 @@ public class AmoroManagementConf {
   public static final ConfigOption<Long> DB_CONNECT_MAX_WAIT_MILLIS =
       ConfigOptions.key("database.connection-pool-max-wait-millis")
           .longType()
-          .defaultValue(1000L)
+          .defaultValue(30000L)
           .withDescription("Max wait time before getting a connection timeout.");
 
   public static final ConfigOption<Long> OPTIMIZER_HB_TIMEOUT =

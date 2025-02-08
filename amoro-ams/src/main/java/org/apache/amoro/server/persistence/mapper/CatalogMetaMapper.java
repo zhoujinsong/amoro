@@ -74,7 +74,7 @@ public interface CatalogMetaMapper {
         column = "catalog_properties",
         typeHandler = Map2StringConverter.class)
   })
-  List<CatalogMeta> getCatalog(@Param("catalogName") String catalogName);
+  CatalogMeta getCatalog(@Param("catalogName") String catalogName);
 
   @Insert(
       "INSERT INTO "
@@ -110,6 +110,12 @@ public interface CatalogMetaMapper {
 
   @Select("SELECT table_count FROM " + TABLE_NAME + " WHERE catalog_name = #{catalogName}")
   Integer selectTableCount(@Param("catalogName") String catalogName);
+
+  @Select("SELECT database_count FROM " + TABLE_NAME + " WHERE catalog_name = #{catalogName}")
+  Integer selectDatabaseCount(@Param("catalogName") String catalogName);
+
+  @Select("SELECT COUNT(*) FROM " + TABLE_NAME)
+  Integer selectCatalogCount();
 
   @Update(
       "UPDATE "
