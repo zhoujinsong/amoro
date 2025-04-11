@@ -151,6 +151,7 @@
         <guava.version>32.1.1-jre</guava.version>
         <hudi.version>0.14.1</hudi.version>
         <pagehelper.version>6.1.0</pagehelper.version>
+        <jsqlparser.version>4.7</jsqlparser.version>
 
         <rocksdb-dependency-scope>compile</rocksdb-dependency-scope>
         <lucene-dependency-scope>compile</lucene-dependency-scope>
@@ -842,6 +843,12 @@
                 <scope>${lucene-dependency-scope}</scope>
             </dependency>
 
+            <dependency>
+                <groupId>com.github.jsqlparser</groupId>
+                <artifactId>jsqlparser</artifactId>
+                <version>${jsqlparser.version}</version>
+            </dependency>
+
             <!-- flink dependencies -->
             <dependency>
                 <groupId>org.apache.flink</groupId>
@@ -1251,6 +1258,9 @@
                     <configuration>
                         <quiet>true</quiet>
                         <doclint>none</doclint>
+                        <additionalJOptions>
+                            <additionalJOption>--allow-script-in-comments</additionalJOption>
+                        </additionalJOptions>
                     </configuration>
                     <executions>
                         <execution>

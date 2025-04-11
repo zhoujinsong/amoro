@@ -47,7 +47,7 @@ public abstract class AMSManagerTestBase {
       Configurations configurations = new Configurations();
       CATALOG_MANAGER = new DefaultCatalogManager(configurations);
       TABLE_MANAGER = new DefaultTableManager(configurations, CATALOG_MANAGER);
-      OPTIMIZER_MANAGER = new DefaultOptimizerManager(configurations);
+      OPTIMIZER_MANAGER = new DefaultOptimizerManager(configurations, CATALOG_MANAGER);
     } catch (Throwable throwable) {
       Assert.fail(throwable.getMessage());
     }
@@ -57,6 +57,10 @@ public abstract class AMSManagerTestBase {
   public static void disposeTableService() {
     MetricManager.dispose();
     EventsManager.dispose();
+  }
+
+  protected DefaultCatalogManager catalogManager() {
+    return CATALOG_MANAGER;
   }
 
   protected TableManager tableManager() {
