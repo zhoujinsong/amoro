@@ -64,13 +64,15 @@ public class TerminalController {
   /** Execute some sql */
   public void executeScript(Context ctx) {
     String catalog = ctx.pathParam("catalog");
-    Map<String, String> bodyParams = ctx.bodyAsClass(Map.class);
-    String sql = bodyParams.get("sql");
+    Map<?, ?> bodyParams = ctx.bodyAsClass(Map.class);
+    String sql = (String) bodyParams.get("sql");
+    Map<String, String> sessionConfigurations = (Map<String, String>) bodyParams.get("confs");
     String terminalId = ctx.cookie("JSESSIONID");
     if (terminalId == null) {
       terminalId = UUID.randomUUID().toString();
     }
-    String sessionId = terminalManager.executeScript(terminalId, catalog, sql);
+    String sessionId =
+        terminalManager.executeScript(terminalId, catalog, sql, sessionConfigurations);
 
     ctx.json(OkResponse.of(new SessionInfo(sessionId)));
   }

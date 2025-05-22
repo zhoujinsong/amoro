@@ -98,15 +98,20 @@ public class TerminalManager {
    * @param terminalId - id to mark different terminal windows
    * @param catalog - current catalog to execute script
    * @param script - sql script to be executed
+   * @param sessionConfigurations session configurations to execute script
    * @return - sessionId, session refer to a sql execution context
    */
-  public String executeScript(String terminalId, String catalog, String script) {
+  public String executeScript(
+      String terminalId, String catalog, String script, Map<String, String> sessionConfigurations) {
     CatalogMeta catalogMeta = catalogManager.getCatalogMeta(catalog);
     TableMetaStore metaStore = getCatalogTableMetaStore(catalogMeta);
     String sessionId = getSessionId(terminalId, metaStore, catalog);
     String connectorType = catalogConnectorType(catalogMeta);
     applyClientProperties(catalogMeta);
-    Configurations configuration = new Configurations();
+    Configurations configuration =
+        sessionConfigurations != null
+            ? Configurations.fromMap(sessionConfigurations)
+            : new Configurations();
     configuration.set(
         AmoroManagementConf.TERMINAL_SENSITIVE_CONF_KEYS,
         serviceConfig.get(AmoroManagementConf.TERMINAL_SENSITIVE_CONF_KEYS));
@@ -118,6 +123,11 @@ public class TerminalManager {
     configuration.set(
         TerminalSessionFactory.SessionConfigOptions.CATALOG_URL_BASE,
         AmsUtil.getAMSThriftAddress(serviceConfig, Constants.THRIFT_TABLE_SERVICE_NAME));
+    configuration.set(
+        TerminalSessionFactory.SessionConfigOptions.catalogUri(catalog),
+        AmsUtil.getAMSThriftAddress(serviceConfig, Constants.THRIFT_TABLE_SERVICE_NAME)
+            + "/"
+            + catalog);
     for (String key : catalogMeta.getCatalogProperties().keySet()) {
       String value = catalogMeta.getCatalogProperties().get(key);
       configuration.set(

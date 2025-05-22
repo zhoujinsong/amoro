@@ -104,6 +104,8 @@ public interface OptimizingMapper {
           + " AND b.catalog_name = #{catalogName} AND b.db_name = #{dbName} AND b.table_name = #{tableName}"
           + " <if test='optimizingType != null'> AND a.optimizing_type = #{optimizingType}</if>"
           + " <if test='optimizingStatus != null'> AND a.status = #{optimizingStatus}</if>"
+          + " <if test='beginTime != null'> AND a.plan_time &gt; #{beginTime}</if>"
+          + " <if test='endTime != null'> AND a.plan_time &lt; #{endTime}</if>"
           + " ORDER BY process_id desc"
           + "</script>")
   @Results(
@@ -136,7 +138,47 @@ public interface OptimizingMapper {
       @Param("dbName") String dbName,
       @Param("tableName") String tableName,
       @Param("optimizingType") String optimizingType,
-      @Param("optimizingStatus") ProcessStatus optimizingStatus);
+      @Param("optimizingStatus") ProcessStatus optimizingStatus,
+      @Param("beginTime") String beginTime,
+      @Param("endTime") String endTime);
+
+  @Select(
+      "<script>"
+          + "SELECT a.process_id, a.table_id, a.catalog_name, a.db_name, a.table_name, a.target_snapshot_id,"
+          + " a.target_change_snapshot_id, a.status, a.optimizing_type, a.plan_time, a.end_time,"
+          + " a.fail_reason, a.summary, a.from_sequence, a.to_sequence FROM table_optimizing_process a"
+          + " INNER JOIN table_identifier b ON a.table_id = b.table_id"
+          + " WHERE a.catalog_name = #{catalogName} AND A.process_id = #{processId} AND a.db_name = #{dbName} AND a.table_name = #{tableName}"
+          + " AND b.catalog_name = #{catalogName} AND b.db_name = #{dbName} AND b.table_name = #{tableName}"
+          + "</script>")
+  @Results({
+    @Result(property = "processId", column = "process_id"),
+    @Result(property = "tableId", column = "table_id"),
+    @Result(property = "catalogName", column = "catalog_name"),
+    @Result(property = "dbName", column = "db_name"),
+    @Result(property = "tableName", column = "table_name"),
+    @Result(property = "targetSnapshotId", column = "target_snapshot_id"),
+    @Result(property = "targetChangeSnapshotId", column = "target_change_snapshot_id"),
+    @Result(property = "status", column = "status"),
+    @Result(property = "optimizingType", column = "optimizing_type"),
+    @Result(property = "planTime", column = "plan_time", typeHandler = Long2TsConverter.class),
+    @Result(property = "endTime", column = "end_time", typeHandler = Long2TsConverter.class),
+    @Result(property = "failReason", column = "fail_reason"),
+    @Result(property = "summary", column = "summary", typeHandler = JsonObjectConverter.class),
+    @Result(
+        property = "fromSequence",
+        column = "from_sequence",
+        typeHandler = MapLong2StringConverter.class),
+    @Result(
+        property = "toSequence",
+        column = "to_sequence",
+        typeHandler = MapLong2StringConverter.class)
+  })
+  OptimizingProcessMeta selectOptimizingProcessByProcessId(
+      @Param("catalogName") String catalogName,
+      @Param("dbName") String dbName,
+      @Param("tableName") String tableName,
+      @Param("processId") String processId);
 
   @Select(
       "SELECT a.process_id, a.table_id, a.catalog_name, a.db_name, a.table_name, a.target_snapshot_id,"

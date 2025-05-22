@@ -19,7 +19,7 @@
 package org.apache.amoro.spark.sql.catalyst.analysis
 
 import org.apache.spark.sql.{AnalysisException, SparkSession}
-import org.apache.spark.sql.catalyst.analysis.{caseInsensitiveResolution, withPosition, AnalysisErrorAt, EliminateSubqueryAliases, GetColumnByOrdinal, Resolver, UnresolvedAttribute, UnresolvedExtractValue}
+import org.apache.spark.sql.catalyst.analysis.{caseInsensitiveResolution, withPosition, AnalysisErrorAt, Analyzer, EliminateSubqueryAliases, GetColumnByOrdinal, Resolver, UnresolvedAttribute, UnresolvedExtractValue}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, CurrentDate, CurrentTimestamp, Expression, ExtractValue, LambdaFunction}
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -33,7 +33,6 @@ import org.apache.amoro.spark.table.MixedSparkTable
 
 case class ResolveMergeIntoMixedFormatTableReferences(spark: SparkSession)
   extends Rule[LogicalPlan] {
-
   def checkConditionIsPrimaryKey(aliasedTable: LogicalPlan, cond: Expression): Unit = {
     EliminateSubqueryAliases(aliasedTable) match {
       case r @ DataSourceV2Relation(tbl, _, _, _, _) if isMixedFormatRelation(r) =>
@@ -60,9 +59,9 @@ case class ResolveMergeIntoMixedFormatTableReferences(spark: SparkSession)
           source,
           cond,
           matchedActions,
-          notMatchedActions) =>
+          notMatchedActions)
+        if aliasedTable.resolved && source.resolved && m.duplicateResolved =>
       checkConditionIsPrimaryKey(aliasedTable, cond)
-
       val resolvedMatchedActions = matchedActions.map {
         case DeleteAction(cond) =>
           val resolvedCond = cond.map(resolveCond("DELETE", _, m))
@@ -121,6 +120,7 @@ case class ResolveMergeIntoMixedFormatTableReferences(spark: SparkSession)
         notMatchedActions = resolvedNotMatchedActions)
   }
 
+  def resolver: Resolver = conf.resolver
   private def resolveLiteralFunction(
       nameParts: Seq[String],
       attribute: UnresolvedAttribute,
@@ -178,8 +178,6 @@ case class ResolveMergeIntoMixedFormatTableReferences(spark: SparkSession)
 
     resolvedCond
   }
-
-  def resolver: Resolver = conf.resolver
 
   def resolveExpressionByPlanChildren(
       e: Expression,

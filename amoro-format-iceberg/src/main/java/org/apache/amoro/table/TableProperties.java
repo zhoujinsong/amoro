@@ -273,9 +273,6 @@ public class TableProperties {
       org.apache.iceberg.TableProperties.WRITE_TARGET_FILE_SIZE_BYTES;
   public static final long WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT = 134217728; // 128 MB
 
-  public static final String UPSERT_ENABLED = "write.upsert.enabled";
-  public static final boolean UPSERT_ENABLED_DEFAULT = false;
-
   public static final String WRITE_DISTRIBUTION_MODE =
       org.apache.iceberg.TableProperties.WRITE_DISTRIBUTION_MODE;
   public static final String WRITE_DISTRIBUTION_MODE_NONE =
@@ -296,15 +293,17 @@ public class TableProperties {
   public static final String BASE_REFRESH_INTERVAL = "base.refresh-interval";
   public static final long BASE_REFRESH_INTERVAL_DEFAULT = -1L;
 
-  public static final String SPLIT_SIZE = org.apache.iceberg.TableProperties.SPLIT_SIZE;
-  public static final long SPLIT_SIZE_DEFAULT = 134217728; // 128 MB
+  @Deprecated public static final String UPSERT_ENABLED = "write.upsert.enabled";
+  @Deprecated public static final boolean UPSERT_ENABLED_DEFAULT = false;
 
-  public static final String SPLIT_LOOKBACK = org.apache.iceberg.TableProperties.SPLIT_LOOKBACK;
-  public static final int SPLIT_LOOKBACK_DEFAULT = 10;
-
+  /** table read related properties */
   public static final String SPLIT_OPEN_FILE_COST =
       org.apache.iceberg.TableProperties.SPLIT_OPEN_FILE_COST;
+
   public static final long SPLIT_OPEN_FILE_COST_DEFAULT = 4 * 1024 * 1024; // 4MB
+
+  public static final String SPIT_CHANGE_RECORD_COUNT = "read.split.change-record-count";
+  public static final long SPIT_CHANGE_RECORD_COUNT_DEFAULT = 2000000;
 
   /** log store related properties */
   public static final String ENABLE_LOG_STORE = "log-store.enabled";
@@ -345,6 +344,12 @@ public class TableProperties {
 
   public static final String MIXED_FORMAT_CHANGE_STORE_IDENTIFIER =
       "mixed-format.change.identifier";
+
+  public static final String MERGE_FUNCTION = "merge-function";
+  public static final String MERGE_FUNCTION_REPLACE = "replace";
+  public static final String MERGE_FUNCTION_PARTIAL_UPDATE = "partial-update";
+  public static final String MERGE_FUNCTION_AGGREGATION = "aggregation";
+  public static final String MERGE_FUNCTION_DEFAULT = MERGE_FUNCTION_REPLACE;
 
   /** Protected properties which should not be read by user. */
   public static final Set<String> READ_PROTECTED_PROPERTIES = new HashSet<>();

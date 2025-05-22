@@ -40,6 +40,10 @@ if [ -z "$AMORO_LOG_CONF_FILE" ]; then
     export AMORO_LOG_CONF_FILE="${AMORO_CONF_DIR}/log4j2.xml"
 fi
 
+if [ -z "$OPTIMIZER_LOG_CONF_FILE" ]; then
+    export OPTIMIZER_LOG_CONF_FILE="${AMORO_CONF_DIR}/optimizer-log4j2.xml"
+fi
+
 export AMORO_ENV_FILE=${AMORO_CONF_DIR}/env.sh
 
 JVM_PROPERTIES=${AMORO_CONF_DIR}/jvm.properties

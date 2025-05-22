@@ -23,7 +23,7 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.spark.mixed.MixedSparkCatalogBase;
 import org.apache.amoro.spark.mixed.MixedTableStoreType;
 import org.apache.amoro.spark.table.MixedSparkTable;
-import org.apache.amoro.spark.table.SparkChangeTable;
+import org.apache.amoro.spark.table.SparkInternalTable;
 import org.apache.amoro.table.BasicUnkeyedTable;
 import org.apache.amoro.table.KeyedTable;
 import org.apache.amoro.table.MixedTable;
@@ -86,8 +86,11 @@ public class MixedFormatSparkCatalog extends MixedSparkCatalogBase implements Su
     if (type != null) {
       switch (type) {
         case CHANGE:
-          return new SparkChangeTable(
-              (BasicUnkeyedTable) table.asKeyedTable().changeTable(), false);
+          return new SparkInternalTable(
+              (BasicUnkeyedTable) table.asKeyedTable().changeTable(), false, true);
+        case BASE:
+          return new SparkInternalTable(
+              (BasicUnkeyedTable) table.asKeyedTable().baseTable(), false, false);
         default:
           throw new IllegalArgumentException("Unknown inner table type: " + type);
       }
@@ -120,7 +123,7 @@ public class MixedFormatSparkCatalog extends MixedSparkCatalogBase implements Su
             .withProperties(properties)
             .withPrimaryKeySpec(primaryKeySpec);
       } else {
-        builder.withPartitionSpec(spec).withProperties(properties);
+        throw new IllegalArgumentException("Primary key is required");
       }
       MixedTable table = builder.create();
       return MixedSparkTable.ofMixedTable(table, catalog, name());
