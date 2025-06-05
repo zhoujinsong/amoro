@@ -198,6 +198,8 @@ public class TablePropertyUtil {
     properties.put(org.apache.iceberg.TableProperties.FORMAT_VERSION, "2");
     properties.put(org.apache.iceberg.TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED, "true");
     properties.put("flink.max-continuous-empty-commits", String.valueOf(Integer.MAX_VALUE));
+    // Property for internal table of DLC
+    properties.put("lakehouse.storage.type", "lakefs");
     return properties;
   }
 

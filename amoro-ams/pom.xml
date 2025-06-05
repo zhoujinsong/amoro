@@ -26,7 +26,7 @@
     <parent>
         <groupId>org.apache.amoro</groupId>
         <artifactId>amoro-parent</artifactId>
-        <version>0.8-SNAPSHOT</version>
+        <version>0.9-SNAPSHOT</version>
     </parent>
 
     <artifactId>amoro-ams</artifactId>
@@ -44,16 +44,15 @@
     <dependencies>
         <dependency>
             <groupId>org.apache.amoro</groupId>
-            <artifactId>amoro-format-iceberg</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.amoro</groupId>
             <artifactId>amoro-mixed-hive</artifactId>
             <exclusions>
                 <exclusion>
                     <groupId>org.eclipse.jetty.orbit</groupId>
                     <artifactId>javax.servlet</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>*</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -81,6 +80,10 @@
                 <exclusion>
                     <groupId>log4j</groupId>
                     <artifactId>log4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-slf4j2-impl</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
@@ -177,10 +180,6 @@
                 <exclusion>
                     <groupId>org.jodd</groupId>
                     <artifactId>jodd-core</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.codehaus.jackson</groupId>
-                    <artifactId>jackson-mapper-asl</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -309,22 +308,6 @@
             </exclusions>
         </dependency>
 
-        <!--  apache hudi dependencies -->
-        <dependency>
-            <groupId>org.apache.hudi</groupId>
-            <artifactId>hudi-java-client</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.orc</groupId>
-                    <artifactId>orc-core</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>asm</groupId>
-                    <artifactId>asm</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
         <!-- runtime dependencies -->
         <dependency>
             <groupId>org.apache.amoro</groupId>
@@ -423,6 +406,12 @@
             <artifactId>testcontainers</artifactId>
             <version>1.17.2</version>
             <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-annotations</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -436,6 +425,7 @@
             <groupId>io.kubernetes</groupId>
             <artifactId>client-java</artifactId>
             <version>15.0.1</version>
+            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -451,8 +441,6 @@
             <version>1.19.6</version>
             <scope>test</scope>
         </dependency>
-
-
     </dependencies>
 
     <build>

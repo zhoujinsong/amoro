@@ -47,7 +47,8 @@ public abstract class AbstractMixedHiveMergeDataReader<T> extends AbstractMergeD
       BiFunction<Type, Object, Object> convertConstant,
       boolean reuseContainer,
       StructLikeCollections structLikeCollections,
-      boolean reuseChangeDataCache) {
+      boolean reuseChangeDataCache,
+      Map<String, String> properties) {
     super(
         fileIO,
         tableSchema,
@@ -58,7 +59,8 @@ public abstract class AbstractMixedHiveMergeDataReader<T> extends AbstractMergeD
         convertConstant,
         reuseContainer,
         structLikeCollections,
-        reuseChangeDataCache);
+        reuseChangeDataCache,
+        properties);
   }
 
   @Override

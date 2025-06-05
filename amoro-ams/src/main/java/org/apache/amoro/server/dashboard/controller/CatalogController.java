@@ -38,6 +38,7 @@ import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_CUS
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_GLUE;
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_HADOOP;
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_HIVE;
+import static org.apache.amoro.properties.CatalogMetaProperties.FILE_CONTENT_BASE64_SUFFIX;
 import static org.apache.amoro.properties.CatalogMetaProperties.KEY_WAREHOUSE;
 import static org.apache.amoro.properties.CatalogMetaProperties.STORAGE_CONFIGS_KEY_CORE_SITE;
 import static org.apache.amoro.properties.CatalogMetaProperties.STORAGE_CONFIGS_KEY_HDFS_SITE;
@@ -56,7 +57,7 @@ import org.apache.amoro.TableFormat;
 import org.apache.amoro.api.CatalogMeta;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.server.AmoroManagementConf;
-import org.apache.amoro.server.catalog.CatalogService;
+import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.catalog.InternalCatalog;
 import org.apache.amoro.server.catalog.ServerCatalog;
 import org.apache.amoro.server.dashboard.PlatformFileManager;
@@ -66,7 +67,6 @@ import org.apache.amoro.server.dashboard.model.CatalogSettingInfo.ConfigFileItem
 import org.apache.amoro.server.dashboard.response.OkResponse;
 import org.apache.amoro.server.dashboard.utils.DesensitizationUtil;
 import org.apache.amoro.server.dashboard.utils.PropertiesUtil;
-import org.apache.amoro.server.table.TableService;
 import org.apache.amoro.shade.guava32.com.google.common.base.Objects;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableMap;
@@ -166,10 +166,11 @@ public class CatalogController {
   }
 
   private final PlatformFileManager platformFileInfoService;
-  private final CatalogService tableService;
+  private final CatalogManager catalogService;
 
-  public CatalogController(TableService tableService, PlatformFileManager platformFileInfoService) {
-    this.tableService = tableService;
+  public CatalogController(
+      CatalogManager catalogService, PlatformFileManager platformFileInfoService) {
+    this.catalogService = catalogService;
     this.platformFileInfoService = platformFileInfoService;
   }
 
@@ -190,9 +191,6 @@ public class CatalogController {
   private static Set<String> getHiddenCatalogProperties(
       String type, Map<String, ?> authConfig, Map<String, ?> storageConfig) {
     Set<String> hiddenProperties = Sets.newHashSet(TABLE_FORMATS);
-    if (!CATALOG_TYPE_CUSTOM.equals(type)) {
-      hiddenProperties.add(CatalogProperties.CATALOG_IMPL);
-    }
     if (AUTH_CONFIGS_VALUE_TYPE_AK_SK.equalsIgnoreCase(
         String.valueOf(authConfig.get(AUTH_CONFIGS_KEY_TYPE)))) {
       hiddenProperties.add(S3FileIOProperties.ACCESS_KEY_ID);
@@ -247,22 +245,12 @@ public class CatalogController {
             serverAuthConfig.get(AUTH_CONFIGS_KEY_HADOOP_USERNAME));
         break;
       case AUTH_CONFIGS_VALUE_TYPE_KERBEROS:
-        String keytabFileId = serverAuthConfig.get(AUTH_CONFIGS_KEY_KEYTAB);
-        if (!StringUtils.isEmpty(keytabFileId)) {
-          String keytabB64 =
-              platformFileInfoService.getFileContentB64ById(Integer.valueOf(keytabFileId));
-          metaAuthConfig.put(AUTH_CONFIGS_KEY_KEYTAB, keytabB64);
-        } else {
-          metaAuthConfig.put(AUTH_CONFIGS_KEY_KEYTAB, oldAuthConfig.get(AUTH_CONFIGS_KEY_KEYTAB));
-        }
+        String krbB64 = getFileContent(serverAuthConfig, AUTH_CONFIGS_KEY_KRB5, oldAuthConfig);
+        metaAuthConfig.put(AUTH_CONFIGS_KEY_KRB5, krbB64);
 
-        String krbFileId = serverAuthConfig.get(AUTH_CONFIGS_KEY_KRB5);
-        if (!StringUtils.isEmpty(krbFileId)) {
-          String krbB64 = platformFileInfoService.getFileContentB64ById(Integer.valueOf(krbFileId));
-          metaAuthConfig.put(AUTH_CONFIGS_KEY_KRB5, krbB64);
-        } else {
-          metaAuthConfig.put(AUTH_CONFIGS_KEY_KRB5, oldAuthConfig.get(AUTH_CONFIGS_KEY_KRB5));
-        }
+        String keytabB64 = getFileContent(serverAuthConfig, AUTH_CONFIGS_KEY_KEYTAB, oldAuthConfig);
+        metaAuthConfig.put(AUTH_CONFIGS_KEY_KEYTAB, keytabB64);
+
         metaAuthConfig.put(
             AUTH_CONFIGS_KEY_PRINCIPAL, serverAuthConfig.get(AUTH_CONFIGS_KEY_PRINCIPAL));
         break;
@@ -446,22 +434,14 @@ public class CatalogController {
 
       // when update catalog, fileId won't be post when file doesn't been changed!
       int idx;
-      boolean fillUseOld = oldCatalogMeta != null;
       for (idx = 0; idx < metaKeyList.size(); idx++) {
-        String fileId = info.getStorageConfig().get(metaKeyList.get(idx));
-        if (!StringUtils.isEmpty(fileId)) {
-          String fileSite = platformFileInfoService.getFileContentB64ById(Integer.valueOf(fileId));
-          metaStorageConfig.put(
-              metaKeyList.get(idx), StringUtils.isEmpty(fileSite) ? EMPTY_XML_BASE64 : fileSite);
-        } else {
-          if (fillUseOld) {
-            String fileSite = oldCatalogMeta.getStorageConfigs().get(metaKeyList.get(idx));
-            metaStorageConfig.put(
-                metaKeyList.get(idx), StringUtils.isEmpty(fileSite) ? EMPTY_XML_BASE64 : fileSite);
-          } else {
-            metaStorageConfig.put(metaKeyList.get(idx), EMPTY_XML_BASE64);
-          }
-        }
+        String file =
+            getFileContent(
+                info.getStorageConfig(),
+                metaKeyList.get(idx),
+                oldCatalogMeta == null ? null : oldCatalogMeta.getStorageConfigs());
+        metaStorageConfig.put(
+            metaKeyList.get(idx), StringUtils.isEmpty(file) ? EMPTY_XML_BASE64 : file);
       }
     } else if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_S3)) {
       CatalogUtil.copyProperty(
@@ -486,6 +466,24 @@ public class CatalogController {
 
     catalogMeta.setStorageConfigs(metaStorageConfig);
     return catalogMeta;
+  }
+
+  private String getFileContent(
+      Map<String, String> config, String fileKey, Map<String, String> oldConfig) {
+    String contentBase64Key = fileKey + FILE_CONTENT_BASE64_SUFFIX;
+    String contentBase64 = config.get(contentBase64Key);
+    if (!StringUtils.isEmpty(contentBase64)) {
+      return contentBase64;
+    }
+    String fileId = config.get(fileKey);
+    if (!StringUtils.isEmpty(fileId)) {
+      return platformFileInfoService.getFileContentB64ById(Integer.valueOf(fileId));
+    }
+    if (oldConfig != null) {
+      return oldConfig.get(fileKey);
+    }
+
+    return null;
   }
 
   private void checkHiddenProperties(CatalogRegisterInfo info) {
@@ -544,11 +542,11 @@ public class CatalogController {
   public void createCatalog(Context ctx) {
     CatalogRegisterInfo info = ctx.bodyAsClass(CatalogRegisterInfo.class);
     validateCatalogRegisterInfo(info);
-    if (tableService.catalogExist(info.getName())) {
+    if (catalogService.catalogExist(info.getName())) {
       throw new RuntimeException("Duplicate catalog name!");
     }
     CatalogMeta catalogMeta = constructCatalogMeta(info, null);
-    tableService.createCatalog(catalogMeta);
+    catalogService.createCatalog(catalogMeta);
     ctx.json(OkResponse.of(""));
   }
 
@@ -578,10 +576,10 @@ public class CatalogController {
   /** Get detail of some catalog. */
   public void getCatalogDetail(Context ctx) {
     String catalogName = ctx.pathParam("catalogName");
-    CatalogMeta catalogMeta = tableService.getCatalogMeta(catalogName);
+    CatalogMeta catalogMeta = catalogService.getCatalogMeta(catalogName);
     CatalogSettingInfo info = new CatalogSettingInfo();
 
-    if (tableService.catalogExist(catalogName)) {
+    if (catalogService.catalogExist(catalogName)) {
       info.setName(catalogMeta.getCatalogName());
       // We create ams catalog with type hadoop in v0.3, we should be compatible with it.
       if (CATALOG_TYPE_HADOOP.equals(catalogMeta.getCatalogType())
@@ -626,13 +624,13 @@ public class CatalogController {
   public void updateCatalog(Context ctx) {
     CatalogRegisterInfo info = ctx.bodyAsClass(CatalogRegisterInfo.class);
     validateCatalogRegisterInfo(info);
-    CatalogMeta optCatalog = tableService.getCatalogMeta(info.getName());
+    CatalogMeta optCatalog = catalogService.getCatalogMeta(info.getName());
     Preconditions.checkNotNull(optCatalog, "Catalog not exist!");
 
     unMaskSensitiveData(info, optCatalog);
     // check only some item can be modified!
     CatalogMeta catalogMeta = constructCatalogMeta(info, optCatalog);
-    tableService.updateCatalog(catalogMeta);
+    catalogService.updateCatalog(catalogMeta);
     ctx.json(OkResponse.ok());
   }
 
@@ -641,9 +639,9 @@ public class CatalogController {
     String catalogName = ctx.pathParam("catalogName");
     Preconditions.checkArgument(
         StringUtils.isNotEmpty(ctx.pathParam("catalogName")), "Catalog name is empty!");
-    ServerCatalog serverCatalog = tableService.getServerCatalog(catalogName);
+    ServerCatalog serverCatalog = catalogService.getServerCatalog(catalogName);
     if (serverCatalog instanceof InternalCatalog) {
-      ctx.json(OkResponse.of(serverCatalog.listTables().size() == 0));
+      ctx.json(OkResponse.of(serverCatalog.listTables().isEmpty()));
     } else {
       ctx.json(OkResponse.of(true));
     }
@@ -654,7 +652,7 @@ public class CatalogController {
     String catalogName = ctx.pathParam("catalogName");
     Preconditions.checkArgument(
         StringUtils.isNotEmpty(ctx.pathParam("catalogName")), "Catalog name is empty!");
-    tableService.dropCatalog(catalogName);
+    catalogService.dropCatalog(catalogName);
     ctx.json(OkResponse.of("OK"));
   }
 
@@ -675,7 +673,7 @@ public class CatalogController {
             && StringUtils.isNotEmpty(configKey),
         "Catalog name or auth type or config key is null!");
 
-    CatalogMeta catalogMeta = tableService.getCatalogMeta(catalogName);
+    CatalogMeta catalogMeta = catalogService.getCatalogMeta(catalogName);
     if (CONFIG_TYPE_STORAGE.equalsIgnoreCase(confType)) {
       Map<String, String> storageConfig = catalogMeta.getStorageConfigs();
       String key = configKey.replaceAll("-", "\\.");

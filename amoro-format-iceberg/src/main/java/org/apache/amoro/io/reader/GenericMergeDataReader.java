@@ -31,9 +31,16 @@ import org.apache.iceberg.data.parquet.GenericParquetReaders;
 import org.apache.iceberg.orc.OrcRowReader;
 import org.apache.iceberg.parquet.ParquetValueReader;
 import org.apache.iceberg.types.Type;
+import org.apache.iceberg.types.Types;
+import org.apache.iceberg.util.DateTimeUtil;
 import org.apache.orc.TypeDescription;
 import org.apache.parquet.schema.MessageType;
 
+import java.nio.ByteBuffer;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -50,7 +57,8 @@ public class GenericMergeDataReader extends AbstractMergeDataReader<Record> {
       BiFunction<Type, Object, Object> convertConstant,
       boolean reuseContainer,
       StructLikeCollections structLikeCollections,
-      boolean reuseChangeDataCache) {
+      boolean reuseChangeDataCache,
+      Map<String, String> properties) {
     super(
         fileIO,
         tableSchema,
@@ -61,7 +69,8 @@ public class GenericMergeDataReader extends AbstractMergeDataReader<Record> {
         convertConstant,
         reuseContainer,
         structLikeCollections,
-        reuseChangeDataCache);
+        reuseChangeDataCache,
+        properties);
   }
 
   @Override
@@ -87,7 +96,7 @@ public class GenericMergeDataReader extends AbstractMergeDataReader<Record> {
 
   @Override
   protected MergeFunction<Record> mergeFunction() {
-    return PartialUpdateMergeFunction.getInstance();
+    return new GenericMergeFunction(struct, primaryKeySpec, properties);
   }
 
   @Override
@@ -95,24 +104,87 @@ public class GenericMergeDataReader extends AbstractMergeDataReader<Record> {
     return toStructLikeFunction();
   }
 
-  public static class PartialUpdateMergeFunction implements MergeFunction<Record> {
-    private static final PartialUpdateMergeFunction INSTANCE = new PartialUpdateMergeFunction();
+  public static class GenericMergeFunction extends AbstractMergeFunction<Record> {
 
-    public static PartialUpdateMergeFunction getInstance() {
-      return INSTANCE;
+    public GenericMergeFunction(
+        Types.StructType struct, PrimaryKeySpec primaryKeySpec, Map<String, String> properties) {
+      super(
+          struct,
+          primaryKeySpec,
+          properties,
+          GenericConvertFromFunction.get(),
+          GenericConvertToFunction.get());
     }
 
     @Override
     public Record merge(Record record, Record update) {
       GenericRecord updatedRecord = GenericRecord.create(record.struct());
       for (int i = 0; i < record.size(); i++) {
-        if (i < update.size() && update.get(i) != null) {
-          updatedRecord.set(i, update.get(i));
+        if (i < fieldMergeOperators.length) {
+          updatedRecord.set(i, fieldMergeOperators[i].apply(record.get(i), update.get(i)));
         } else {
-          updatedRecord.set(i, record.get(i));
+          updatedRecord.set(i, update.get(i));
         }
       }
       return updatedRecord;
+    }
+  }
+
+  public static class GenericConvertFromFunction implements BiFunction<Type, Object, Object> {
+
+    private static final GenericConvertFromFunction INSTANCE = new GenericConvertFromFunction();
+
+    static GenericConvertFromFunction get() {
+      return INSTANCE;
+    }
+
+    @Override
+    public Object apply(Type type, Object o) {
+      switch (type.typeId()) {
+        case DATE:
+          return DateTimeUtil.daysFromDate((LocalDate) o);
+        case TIME:
+          return DateTimeUtil.microsFromTime((LocalTime) o);
+        case TIMESTAMP:
+          if (((Types.TimestampType) type).shouldAdjustToUTC()) {
+            return DateTimeUtil.microsFromTimestamptz((OffsetDateTime) o);
+          } else {
+            return DateTimeUtil.microsFromTimestamp((LocalDateTime) o);
+          }
+        case FIXED:
+          return ByteBuffer.wrap((byte[]) o);
+        default:
+          return o;
+      }
+    }
+  }
+
+  public static class GenericConvertToFunction implements BiFunction<Type, Object, Object> {
+
+    private static final GenericConvertToFunction INSTANCE = new GenericConvertToFunction();
+
+    static GenericConvertToFunction get() {
+      return INSTANCE;
+    }
+
+    @Override
+    public Object apply(Type type, Object o) {
+      switch (type.typeId()) {
+        case DATE:
+          return DateTimeUtil.dateFromDays((Integer) o);
+        case TIME:
+          return DateTimeUtil.timeFromMicros((Long) o);
+        case TIMESTAMP:
+          if (((Types.TimestampType) type).shouldAdjustToUTC()) {
+            return DateTimeUtil.timestamptzFromMicros((Long) o);
+          } else {
+            return DateTimeUtil.timestampFromMicros((Long) o);
+          }
+        case FIXED:
+          return ((ByteBuffer) o).array();
+        default:
+          return o;
+      }
     }
   }
 }

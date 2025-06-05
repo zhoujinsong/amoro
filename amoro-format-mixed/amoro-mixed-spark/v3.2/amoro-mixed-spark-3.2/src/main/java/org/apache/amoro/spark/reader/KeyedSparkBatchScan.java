@@ -54,6 +54,7 @@ import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -162,7 +163,7 @@ public class KeyedSparkBatchScan implements Scan, Batch, SupportsReportStatistic
       try (CloseableIterable<CombinedScanTask> tasksIterable = scan.planTasks()) {
         this.tasks = Lists.newArrayList(tasksIterable);
         LOG.info(
-            "mor statistics plan task end, cost time {}, tasks num {}",
+            "mor statistics plan task end, cost time {} ms, tasks num {}",
             System.currentTimeMillis() - startTime,
             tasks.size());
       } catch (IOException e) {
@@ -225,7 +226,8 @@ public class KeyedSparkBatchScan implements Scan, Batch, SupportsReportStatistic
                 task.expectedSchema,
                 task.keySpec,
                 task.nameMapping,
-                task.caseSensitive);
+                task.caseSensitive,
+                task.properties);
       }
       scanTasks = task.combinedScanTask.tasks().iterator();
     }
@@ -270,6 +272,7 @@ public class KeyedSparkBatchScan implements Scan, Batch, SupportsReportStatistic
     final PrimaryKeySpec keySpec;
     final String nameMapping;
     final String mergeFunction;
+    final Map<String, String> properties;
 
     MixedFormatInputPartition(
         CombinedScanTask combinedScanTask,
@@ -288,6 +291,7 @@ public class KeyedSparkBatchScan implements Scan, Batch, SupportsReportStatistic
               table.properties(),
               org.apache.amoro.table.TableProperties.MERGE_FUNCTION,
               org.apache.amoro.table.TableProperties.MERGE_FUNCTION_DEFAULT);
+      this.properties = table.properties();
     }
   }
 }

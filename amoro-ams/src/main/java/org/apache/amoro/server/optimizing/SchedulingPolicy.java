@@ -21,27 +21,36 @@ package org.apache.amoro.server.optimizing;
 import org.apache.amoro.ServerTableIdentifier;
 import org.apache.amoro.api.BlockableOperation;
 import org.apache.amoro.resource.ResourceGroup;
-import org.apache.amoro.server.table.TableRuntime;
+import org.apache.amoro.server.optimizing.sorter.QuotaOccupySorter;
+import org.apache.amoro.server.optimizing.sorter.SorterFactory;
+import org.apache.amoro.server.table.DefaultOptimizingState;
+import org.apache.amoro.server.table.DefaultTableRuntime;
 import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTesting;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
+import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class SchedulingPolicy {
 
-  private static final String SCHEDULING_POLICY_PROPERTY_NAME = "scheduling-policy";
-  private static final String QUOTA = "quota";
-  private static final String BALANCED = "balanced";
+  public static final Logger LOG = LoggerFactory.getLogger(SchedulingPolicy.class);
 
-  private final Map<ServerTableIdentifier, TableRuntime> tableRuntimeMap = new HashMap<>();
+  private static final String SCHEDULING_POLICY_PROPERTY_NAME = "scheduling-policy";
+
+  private final Map<ServerTableIdentifier, DefaultTableRuntime> tableRuntimeMap = new HashMap<>();
   private volatile String policyName;
   private final Lock tableLock = new ReentrantLock();
+  private static final Map<String, SorterFactory> sorterFactoryCache = new ConcurrentHashMap<>();
 
   public SchedulingPolicy(ResourceGroup group) {
     setTableSorterIfNeeded(group);
@@ -53,17 +62,31 @@ public class SchedulingPolicy {
       policyName =
           Optional.ofNullable(optimizerGroup.getProperties())
               .orElseGet(Maps::newHashMap)
-              .getOrDefault(SCHEDULING_POLICY_PROPERTY_NAME, QUOTA);
+              .getOrDefault(SCHEDULING_POLICY_PROPERTY_NAME, QuotaOccupySorter.IDENTIFIER);
     } finally {
       tableLock.unlock();
     }
+  }
+
+  static {
+    ServiceLoader<SorterFactory> sorterFactories = ServiceLoader.load(SorterFactory.class);
+    Iterator<SorterFactory> iterator = sorterFactories.iterator();
+    iterator.forEachRemaining(
+        sorterFactory -> {
+          String identifier = sorterFactory.getIdentifier();
+          sorterFactoryCache.put(identifier, sorterFactory);
+          LOG.info(
+              "Loaded scheduling policy {} and its corresponding sorter instance {}",
+              identifier,
+              sorterFactory.getClass().getName());
+        });
   }
 
   public String name() {
     return policyName;
   }
 
-  public TableRuntime scheduleTable(Set<ServerTableIdentifier> skipSet) {
+  public DefaultTableRuntime scheduleTable(Set<ServerTableIdentifier> skipSet) {
     tableLock.lock();
     try {
       fillSkipSet(skipSet);
@@ -76,17 +99,20 @@ public class SchedulingPolicy {
     }
   }
 
-  private Comparator<TableRuntime> createSorterByPolicy() {
-    if (policyName.equalsIgnoreCase(QUOTA)) {
-      return new QuotaOccupySorter();
-    } else if (policyName.equalsIgnoreCase(BALANCED)) {
-      return new BalancedSorter();
+  private Comparator<DefaultTableRuntime> createSorterByPolicy() {
+    if (sorterFactoryCache.get(policyName) != null) {
+      SorterFactory sorterFactory = sorterFactoryCache.get(policyName);
+      LOG.info(
+          "Using sorter instance {} corresponding to the scheduling policy {}",
+          sorterFactory.getClass().getName(),
+          policyName);
+      return sorterFactory.createComparator();
     } else {
-      throw new IllegalArgumentException("Illegal scheduling policy: " + policyName);
+      throw new IllegalArgumentException("Unsupported scheduling policy: " + policyName);
     }
   }
 
-  public TableRuntime getTableRuntime(ServerTableIdentifier tableIdentifier) {
+  public DefaultTableRuntime getTableRuntime(ServerTableIdentifier tableIdentifier) {
     tableLock.lock();
     try {
       return tableRuntimeMap.get(tableIdentifier);
@@ -98,23 +124,24 @@ public class SchedulingPolicy {
   private void fillSkipSet(Set<ServerTableIdentifier> originalSet) {
     long currentTime = System.currentTimeMillis();
     tableRuntimeMap.values().stream()
+        .map(DefaultTableRuntime::getOptimizingState)
         .filter(
-            tableRuntime ->
-                !isTablePending(tableRuntime)
-                    || tableRuntime.isBlocked(BlockableOperation.OPTIMIZE)
-                    || currentTime - tableRuntime.getLastPlanTime()
-                        < tableRuntime.getOptimizingConfig().getMinPlanInterval())
+            optimizingState ->
+                !isTablePending(optimizingState)
+                    || optimizingState.isBlocked(BlockableOperation.OPTIMIZE)
+                    || currentTime - optimizingState.getLastPlanTime()
+                        < optimizingState.getOptimizingConfig().getMinPlanInterval())
         .forEach(tableRuntime -> originalSet.add(tableRuntime.getTableIdentifier()));
   }
 
-  private boolean isTablePending(TableRuntime tableRuntime) {
-    return tableRuntime.getOptimizingStatus() == OptimizingStatus.PENDING
-        && (tableRuntime.getLastOptimizedSnapshotId() != tableRuntime.getCurrentSnapshotId()
-            || tableRuntime.getLastOptimizedChangeSnapshotId()
-                != tableRuntime.getCurrentChangeSnapshotId());
+  private boolean isTablePending(DefaultOptimizingState optimizingState) {
+    return optimizingState.getOptimizingStatus() == OptimizingStatus.PENDING
+        && (optimizingState.getLastOptimizedSnapshotId() != optimizingState.getCurrentSnapshotId()
+            || optimizingState.getLastOptimizedChangeSnapshotId()
+                != optimizingState.getCurrentChangeSnapshotId());
   }
 
-  public void addTable(TableRuntime tableRuntime) {
+  public void addTable(DefaultTableRuntime tableRuntime) {
     tableLock.lock();
     try {
       tableRuntimeMap.put(tableRuntime.getTableIdentifier(), tableRuntime);
@@ -123,7 +150,7 @@ public class SchedulingPolicy {
     }
   }
 
-  public void removeTable(TableRuntime tableRuntime) {
+  public void removeTable(DefaultTableRuntime tableRuntime) {
     tableLock.lock();
     try {
       tableRuntimeMap.remove(tableRuntime.getTableIdentifier());
@@ -133,33 +160,7 @@ public class SchedulingPolicy {
   }
 
   @VisibleForTesting
-  Map<ServerTableIdentifier, TableRuntime> getTableRuntimeMap() {
+  Map<ServerTableIdentifier, DefaultTableRuntime> getTableRuntimeMap() {
     return tableRuntimeMap;
-  }
-
-  private static class QuotaOccupySorter implements Comparator<TableRuntime> {
-
-    private final Map<TableRuntime, Double> tableWeightMap = Maps.newHashMap();
-
-    @Override
-    public int compare(TableRuntime one, TableRuntime another) {
-      return Double.compare(
-          tableWeightMap.computeIfAbsent(one, TableRuntime::calculateQuotaOccupy),
-          tableWeightMap.computeIfAbsent(another, TableRuntime::calculateQuotaOccupy));
-    }
-  }
-
-  private static class BalancedSorter implements Comparator<TableRuntime> {
-    @Override
-    public int compare(TableRuntime one, TableRuntime another) {
-      return Long.compare(
-          Math.max(
-              one.getLastFullOptimizingTime(),
-              Math.max(one.getLastMinorOptimizingTime(), one.getLastMajorOptimizingTime())),
-          Math.max(
-              another.getLastFullOptimizingTime(),
-              Math.max(
-                  another.getLastMinorOptimizingTime(), another.getLastMajorOptimizingTime())));
-    }
   }
 }

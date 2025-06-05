@@ -29,9 +29,10 @@ import org.apache.amoro.mixed.MixedFormatCatalog;
 import org.apache.amoro.optimizer.standalone.StandaloneOptimizer;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.resource.ResourceGroup;
+import org.apache.amoro.server.catalog.DefaultCatalogManager;
 import org.apache.amoro.server.catalog.ServerCatalog;
+import org.apache.amoro.server.resource.InternalContainers;
 import org.apache.amoro.server.resource.OptimizerManager;
-import org.apache.amoro.server.resource.ResourceContainers;
 import org.apache.amoro.server.table.DefaultTableService;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.io.MoreFiles;
@@ -51,6 +52,7 @@ import java.io.IOException;
 import java.net.BindException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -67,7 +69,7 @@ public class AmsEnvironment {
   private static final String OPTIMIZE_GROUP = "default";
   private final AmoroServiceContainer serviceContainer;
   private Configurations serviceConfig;
-  private DefaultTableService tableService;
+  private DefaultCatalogManager catalogManager;
   private final AtomicBoolean amsExit;
   private int tableServiceBindPort;
   private int optimizingServiceBindPort;
@@ -139,8 +141,11 @@ public class AmsEnvironment {
     startAms();
     DynFields.UnboundField<DefaultTableService> amsTableServiceField =
         DynFields.builder().hiddenImpl(AmoroServiceContainer.class, "tableService").build();
-    tableService = amsTableServiceField.bind(serviceContainer).get();
-    DynFields.UnboundField<CompletableFuture<Boolean>> tableServiceField =
+    DynFields.UnboundField<DefaultCatalogManager> amsCatalogManagerField =
+        DynFields.builder().hiddenImpl(AmoroServiceContainer.class, "catalogManager").build();
+    catalogManager = amsCatalogManagerField.bind(serviceContainer).get();
+    DefaultTableService tableService = amsTableServiceField.bind(serviceContainer).get();
+    DynFields.UnboundField<CompletableFuture<Boolean>> tableServiceInitializedField =
         DynFields.builder().hiddenImpl(DefaultTableService.class, "initialized").build();
     boolean tableServiceIsStart = false;
     long startTime = System.currentTimeMillis();
@@ -149,7 +154,7 @@ public class AmsEnvironment {
         throw new RuntimeException("table service not start yet after 10s");
       }
       try {
-        tableServiceField.bind(tableService).get().get();
+        tableServiceInitializedField.bind(tableService).get().get();
         tableServiceIsStart = true;
       } catch (RuntimeException e) {
         LOG.info("table service not start yet");
@@ -194,7 +199,7 @@ public class AmsEnvironment {
   }
 
   public boolean tableExist(TableIdentifier tableIdentifier) {
-    ServerCatalog catalog = tableService.getServerCatalog(tableIdentifier.getCatalog());
+    ServerCatalog catalog = catalogManager.getServerCatalog(tableIdentifier.getCatalog());
     return catalog.tableExists(tableIdentifier.getDatabase(), tableIdentifier.getTableName());
   }
 
@@ -221,7 +226,7 @@ public class AmsEnvironment {
             properties,
             TableFormat.ICEBERG);
 
-    tableService.createCatalog(catalogMeta);
+    catalogManager.createCatalog(catalogMeta);
   }
 
   private void createExternalIcebergCatalog() {
@@ -235,7 +240,7 @@ public class AmsEnvironment {
             CatalogMetaProperties.CATALOG_TYPE_HADOOP,
             properties,
             TableFormat.ICEBERG);
-    tableService.createCatalog(catalogMeta);
+    catalogManager.createCatalog(catalogMeta);
   }
 
   private void createInternalMixIcebergCatalog() {
@@ -249,7 +254,7 @@ public class AmsEnvironment {
             CatalogMetaProperties.CATALOG_TYPE_AMS,
             properties,
             TableFormat.MIXED_ICEBERG);
-    tableService.createCatalog(catalogMeta);
+    catalogManager.createCatalog(catalogMeta);
     catalogs.put(
         INTERNAL_MIXED_ICEBERG_CATALOG,
         CatalogLoader.load(getTableServiceUrl() + "/" + INTERNAL_MIXED_ICEBERG_CATALOG));
@@ -260,7 +265,7 @@ public class AmsEnvironment {
     CatalogMeta catalogMeta =
         CatalogTestHelpers.buildHiveCatalogMeta(
             MIXED_HIVE_CATALOG, properties, testHMS.hiveConf(), TableFormat.MIXED_HIVE);
-    tableService.createCatalog(catalogMeta);
+    catalogManager.createCatalog(catalogMeta);
     catalogs.put(
         MIXED_HIVE_CATALOG, CatalogLoader.load(getTableServiceUrl() + "/" + MIXED_HIVE_CATALOG));
   }
@@ -278,7 +283,7 @@ public class AmsEnvironment {
     if (optimizingStarted) {
       return;
     }
-    OptimizerManager optimizerManager = serviceContainer.getOptimizingService();
+    OptimizerManager optimizerManager = serviceContainer.getOptimizerManager();
     optimizerManager.createResourceGroup(
         new ResourceGroup.Builder("default", "localContainer")
             .addProperty("memory", "1024")
@@ -297,15 +302,15 @@ public class AmsEnvironment {
   }
 
   public void stopOptimizer() {
-    DynFields.UnboundField<DefaultOptimizingService> field =
-        DynFields.builder().hiddenImpl(AmoroServiceContainer.class, "optimizingService").build();
+    DynFields.UnboundField<OptimizerManager> field =
+        DynFields.builder().hiddenImpl(AmoroServiceContainer.class, "optimizerManager").build();
     field
         .bind(serviceContainer)
         .get()
         .listOptimizers()
         .forEach(
             resource -> {
-              ResourceContainers.get(resource.getContainerName()).releaseOptimizer(resource);
+              InternalContainers.get(resource.getContainerName()).releaseResource(resource);
             });
   }
 
@@ -342,7 +347,8 @@ public class AmsEnvironment {
                         AmoroManagementConf.OPTIMIZING_SERVICE_THRIFT_BIND_PORT,
                         optimizingServiceBindPort);
                     serviceConfig.set(
-                        AmoroManagementConf.REFRESH_EXTERNAL_CATALOGS_INTERVAL, 1000L);
+                        AmoroManagementConf.REFRESH_EXTERNAL_CATALOGS_INTERVAL,
+                        Duration.ofMillis(1000L));
                     serviceContainer.startService();
                     break;
                   } catch (TTransportException e) {

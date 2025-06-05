@@ -32,6 +32,9 @@
   <a href="https://github.com/apache/amoro/actions/workflows/trino-ci.yml">
     <img src="https://github.com/apache/amoro/actions/workflows/trino-ci.yml/badge.svg" />
   </a>
+  <a href="https://deepwiki.com/apache/amoro">
+    <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki">
+  </a>
 </p>
 
 Apache Amoro (incubating) is a Lakehouse management system built on open data lake formats.
@@ -113,7 +116,7 @@ Amoro contains modules as below:
 
 ## Building
 
-Amoro is built using Maven with JDK 8 and JDK 17(only for `amoro-format-mixed/amoro-mixed-trino` module).
+Amoro is built using Maven with JDK 8, 11 and 17(required for `amoro-format-mixed/amoro-mixed-trino` module).
 
 * Build all modules without `amoro-mixed-trino`: `mvn clean package`
 * Build and skip tests: `mvn clean package -DskipTests`
@@ -156,7 +159,17 @@ explore what amoro can do.
 If you are interested in Lakehouse, Data Lake Format, welcome to join our community, we welcome any organizations, teams
 and individuals to grow together, and sincerely hope to help users better use Data Lake Format through open source.
 
-Join the Amoro WeChat Group: Add " `kllnn999` " as a friend on WeChat and specify "Amoro lover".
+### Slack
+
+You can join the Amoro community on Slack. Amoro channel is in ASF Slack workspace.
+
+- Anyone with an @apache.org email address can become a full member of the ASF Slack workspace.
+- Search [Amoro channel](https://the-asf.slack.com/archives/C06RZ9UHUTH) and join it.
+- If you don't have an @apache.org email address, you can email to `dev@amoro.apache.org` to apply for an
+  [ASF Slack invitation](https://infra.apache.org/slack.html). Then join [Amoro channel](https://the-asf.slack.com/archives/C06RZ9UHUTH).
+
+### Wechat
+Join the Amoro WeChat Group: Add " `kllnn999` " as a friend and request to join the group.
 
 ## Contributors
 This project exists thanks to all the people who contribute.

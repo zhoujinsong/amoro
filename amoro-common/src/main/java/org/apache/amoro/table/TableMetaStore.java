@@ -25,6 +25,8 @@ import org.apache.amoro.shade.guava32.com.google.common.base.Strings;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.hash.Hashing;
 import org.apache.amoro.shade.guava32.com.google.common.io.ByteStreams;
+import org.apache.amoro.utils.LoadLocalConfigurationUtil;
+import org.apache.amoro.utils.ReflectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -35,7 +37,6 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.authentication.util.KerberosName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.security.krb5.KrbException;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileOutputStream;
@@ -337,6 +338,13 @@ public class TableMetaStore implements Serializable {
     return authInformation();
   }
 
+  private Object readResolve() {
+    if (LoadLocalConfigurationUtil.loadLocalConf()) {
+      return new TableMetaStore(LoadLocalConfigurationUtil.getLocalConfiguration());
+    }
+    return this;
+  }
+
   class RuntimeContext {
     private Configuration configuration;
     private UserGroupInformation ugi;
@@ -383,7 +391,7 @@ public class TableMetaStore implements Serializable {
             constructKerberosUgi();
           }
           LOG.info("Completed to build ugi {}", authInformation());
-        } catch (IOException | KrbException e) {
+        } catch (Exception e) {
           throw new RuntimeException("Fail to init user group information", e);
         }
       } else {
@@ -407,13 +415,17 @@ public class TableMetaStore implements Serializable {
       return ugi;
     }
 
-    private void constructKerberosUgi() throws IOException, KrbException {
+    private void constructKerberosUgi() throws Exception {
       Path confPath = generateKrbConfPath();
       String krbConfFile = saveConfInPath(confPath, KRB_CONF_FILE_NAME, krbConf);
       String keyTabFile = saveConfInPath(confPath, KEY_TAB_FILE_NAME, krbKeyTab);
       System.clearProperty(HADOOP_USER_PROPERTY);
       System.setProperty(KRB5_CONF_PROPERTY, krbConfFile);
-      sun.security.krb5.Config.refresh();
+      if (System.getProperty("java.vendor").contains("IBM")) {
+        ReflectionUtils.invoke("com.ibm.security.krb5.internal.Config", "refresh");
+      } else {
+        ReflectionUtils.invoke("sun.security.krb5.Config", "refresh");
+      }
       UserGroupInformation.setConfiguration(getConfiguration());
       KerberosName.resetDefaultRealm();
       this.ugi = UserGroupInformation.loginUserFromKeytabAndReturnUGI(krbPrincipal, keyTabFile);
@@ -523,7 +535,7 @@ public class TableMetaStore implements Serializable {
     }
 
     private Configuration buildConfiguration(TableMetaStore metaStore) {
-      Configuration configuration = new Configuration();
+      Configuration configuration = new Configuration(false);
       if (!ArrayUtils.isEmpty(metaStore.getCoreSite())) {
         configuration.addResource(new ByteArrayInputStream(metaStore.getCoreSite()));
       }

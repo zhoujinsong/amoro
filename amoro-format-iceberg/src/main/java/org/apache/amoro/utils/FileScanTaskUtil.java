@@ -69,4 +69,14 @@ public class FileScanTaskUtil {
         .mapToObj(i -> DataTreeNode.of(mask, i))
         .collect(Collectors.toList());
   }
+
+  public static int validScanBucket(int bucketCandidate) {
+    Preconditions.checkArgument(
+        bucketCandidate >= 0, "Illegal bucket candidate: %d", bucketCandidate);
+    int validScanBucket = Integer.highestOneBit(bucketCandidate);
+    if (validScanBucket != bucketCandidate) {
+      validScanBucket = validScanBucket >> 1;
+    }
+    return validScanBucket;
+  }
 }

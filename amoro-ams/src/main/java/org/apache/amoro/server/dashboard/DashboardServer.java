@@ -37,6 +37,7 @@ import org.apache.amoro.exception.SignatureCheckException;
 import org.apache.amoro.server.AmoroManagementConf;
 import org.apache.amoro.server.DefaultOptimizingService;
 import org.apache.amoro.server.RestCatalogService;
+import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.dashboard.controller.CatalogController;
 import org.apache.amoro.server.dashboard.controller.HealthCheckController;
 import org.apache.amoro.server.dashboard.controller.LoginController;
@@ -50,7 +51,8 @@ import org.apache.amoro.server.dashboard.controller.TerminalController;
 import org.apache.amoro.server.dashboard.controller.VersionController;
 import org.apache.amoro.server.dashboard.response.ErrorResponse;
 import org.apache.amoro.server.dashboard.utils.ParamSignatureCalculator;
-import org.apache.amoro.server.table.TableService;
+import org.apache.amoro.server.resource.OptimizerManager;
+import org.apache.amoro.server.table.TableManager;
 import org.apache.amoro.server.terminal.TerminalManager;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.commons.lang3.StringUtils;
@@ -76,8 +78,6 @@ public class DashboardServer {
   private static final String AUTH_TYPE_BASIC = "basic";
   private static final String X_REQUEST_SOURCE_HEADER = "X-Request-Source";
   private static final String X_REQUEST_SOURCE_WEB = "Web";
-  private static final String SWAGGER_PATH = "/openapi-ui";
-
   private final CatalogController catalogController;
   private final HealthCheckController healthCheckController;
   private final LoginController loginController;
@@ -96,53 +96,62 @@ public class DashboardServer {
 
   public DashboardServer(
       Configurations serviceConfig,
-      TableService tableService,
-      DefaultOptimizingService optimizerManager,
+      CatalogManager catalogManager,
+      TableManager tableManager,
+      OptimizerManager optimizerManager,
+      DefaultOptimizingService optimizingService,
       TerminalManager terminalManager) {
     PlatformFileManager platformFileManager = new PlatformFileManager();
-    this.catalogController = new CatalogController(tableService, platformFileManager);
+    this.catalogController = new CatalogController(catalogManager, platformFileManager);
     this.healthCheckController = new HealthCheckController();
     this.loginController = new LoginController(serviceConfig);
-    this.optimizerGroupController = new OptimizerGroupController(tableService, optimizerManager);
-    this.optimizerController = new OptimizerController(optimizerManager);
+    // TODO: remove table service from OptimizerGroupController
+    this.optimizerGroupController =
+        new OptimizerGroupController(tableManager, optimizingService, optimizerManager);
+    this.optimizerController = new OptimizerController(optimizingService, optimizerManager);
     this.platformFileInfoController = new PlatformFileInfoController(platformFileManager);
     this.settingController = new SettingController(serviceConfig, optimizerManager);
-    ServerTableDescriptor tableDescriptor = new ServerTableDescriptor(tableService, serviceConfig);
-    this.tableController = new TableController(tableService, tableDescriptor, serviceConfig);
+    ServerTableDescriptor tableDescriptor =
+        new ServerTableDescriptor(catalogManager, tableManager, serviceConfig);
+    // TODO: remove table service from TableController
+    this.tableController =
+        new TableController(catalogManager, tableManager, tableDescriptor, serviceConfig);
     this.terminalController = new TerminalController(terminalManager);
     this.versionController = new VersionController();
-    this.overviewController = new OverviewController();
+    OverviewManager manager = new OverviewManager(serviceConfig);
+    this.overviewController = new OverviewController(manager);
 
     this.authType = serviceConfig.get(AmoroManagementConf.HTTP_SERVER_REST_AUTH_TYPE);
     this.basicAuthUser = serviceConfig.get(AmoroManagementConf.ADMIN_USERNAME);
     this.basicAuthPassword = serviceConfig.get(AmoroManagementConf.ADMIN_PASSWORD);
   }
 
-  private String indexHtml = "";
+  private volatile String indexHtml = null;
   // read index.html content
   public String getIndexFileContent() {
-    try {
-      if ("".equals(indexHtml)) {
-        try (InputStream fileName =
-            DashboardServer.class.getClassLoader().getResourceAsStream("static/index.html")) {
-          Preconditions.checkNotNull(fileName, "Cannot find index file.");
-          try (InputStreamReader isr =
-                  new InputStreamReader(fileName, StandardCharsets.UTF_8.newDecoder());
-              BufferedReader br = new BufferedReader(isr)) {
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = br.readLine()) != null) {
-              // process the line
-              sb.append(line);
+    if (indexHtml == null) {
+      synchronized (this) {
+        if (indexHtml == null) {
+          try (InputStream inputStream =
+              DashboardServer.class.getClassLoader().getResourceAsStream("static/index.html")) {
+            Preconditions.checkNotNull(inputStream, "Cannot find index file.");
+            try (InputStreamReader isr =
+                    new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+                BufferedReader br = new BufferedReader(isr)) {
+              StringBuilder sb = new StringBuilder();
+              String line;
+              while ((line = br.readLine()) != null) {
+                sb.append(line);
+              }
+              indexHtml = sb.toString();
             }
-            indexHtml = sb.toString();
+          } catch (IOException e) {
+            throw new UncheckedIOException("Load index html failed", e);
           }
         }
       }
-      return indexHtml;
-    } catch (IOException e) {
-      throw new UncheckedIOException("Load index html filed", e);
     }
+    return indexHtml;
   }
 
   public Consumer<StaticFileConfig> configStaticFiles() {
@@ -236,6 +245,9 @@ public class DashboardServer {
             get(
                 "/catalogs/{catalog}/dbs/{db}/tables/{table}/optimizing-processes",
                 tableController::getOptimizingProcesses);
+            get(
+                "/catalogs/{catalog}/dbs/{db}/tables/{table}/optimizing-process",
+                tableController::getOptimizingProcessByProcessId);
             get(
                 "/catalogs/{catalog}/dbs/{db}/tables/{table}/optimizing-types",
                 tableController::getOptimizingTypes);
@@ -368,26 +380,28 @@ public class DashboardServer {
 
   public void preHandleRequest(Context ctx) {
     String uriPath = ctx.path();
-    String requestSource = ctx.header(X_REQUEST_SOURCE_HEADER);
-    if (uriPath.startsWith(SWAGGER_PATH)) {
+    if (inWhiteList(uriPath)) {
       return;
     }
-    if (needApiKeyCheck(uriPath) && !X_REQUEST_SOURCE_WEB.equalsIgnoreCase(requestSource)) {
-      if (AUTH_TYPE_BASIC.equalsIgnoreCase(authType)) {
-        BasicAuthCredentials cred = ctx.basicAuthCredentials();
-        if (!(basicAuthUser.equals(cred.component1())
-            && basicAuthPassword.equals(cred.component2()))) {
-          throw new SignatureCheckException(
-              "Failed to authenticate via basic authentication for url:" + uriPath);
-        }
-      } else {
-        checkApiToken(
-            ctx.url(), ctx.queryParam("apiKey"), ctx.queryParam("signature"), ctx.queryParamMap());
-      }
-    } else if (needLoginCheck(uriPath)) {
+    String requestSource = ctx.header(X_REQUEST_SOURCE_HEADER);
+    boolean isWebRequest = X_REQUEST_SOURCE_WEB.equalsIgnoreCase(requestSource);
+
+    if (isWebRequest) {
       if (null == ctx.sessionAttribute("user")) {
         throw new ForbiddenException("User session attribute is missed for url: " + uriPath);
       }
+      return;
+    }
+    if (AUTH_TYPE_BASIC.equalsIgnoreCase(authType)) {
+      BasicAuthCredentials cred = ctx.basicAuthCredentials();
+      if (!(basicAuthUser.equals(cred.component1())
+          && basicAuthPassword.equals(cred.component2()))) {
+        throw new SignatureCheckException(
+            "Failed to authenticate via basic authentication for url:" + uriPath);
+      }
+    } else {
+      checkApiToken(
+          ctx.url(), ctx.queryParam("apiKey"), ctx.queryParam("signature"), ctx.queryParamMap());
     }
   }
 
@@ -407,7 +421,7 @@ public class DashboardServer {
     LOG.error("An error occurred while processing the url:{}", ctx.url(), e);
   }
 
-  private static final String[] urlWhiteList = {
+  private static final String[] URL_WHITE_LIST = {
     "/api/ams/v1/versionInfo",
     "/api/ams/v1/login",
     "/api/ams/v1/health/status",
@@ -430,23 +444,19 @@ public class DashboardServer {
     RestCatalogService.ICEBERG_REST_API_PREFIX + "/*"
   };
 
-  private static boolean needLoginCheck(String uri) {
-    for (String item : urlWhiteList) {
+  private static boolean inWhiteList(String uri) {
+    for (String item : URL_WHITE_LIST) {
       if (item.endsWith("*")) {
         if (uri.startsWith(item.substring(0, item.length() - 1))) {
-          return false;
+          return true;
         }
       } else {
         if (uri.equals(item)) {
-          return false;
+          return true;
         }
       }
     }
-    return true;
-  }
-
-  private boolean needApiKeyCheck(String uri) {
-    return uri.startsWith("/api/ams");
+    return false;
   }
 
   private void checkApiToken(
@@ -455,16 +465,15 @@ public class DashboardServer {
     String encryptString;
     String signCal;
 
-    APITokenManager apiTokenService = new APITokenManager();
     try {
+      if (apiKey == null || signature == null) {
+        throw new SignatureCheckException("API key or signature is missing");
+      }
+      APITokenManager apiTokenService = new APITokenManager();
       String secret = apiTokenService.getSecretByKey(apiKey);
 
       if (secret == null) {
-        throw new SignatureCheckException();
-      }
-
-      if (apiKey == null || signature == null) {
-        throw new SignatureCheckException();
+        throw new SignatureCheckException("Invalid API key");
       }
 
       params.remove("apiKey");

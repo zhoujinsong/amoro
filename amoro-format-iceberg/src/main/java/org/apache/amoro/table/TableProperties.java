@@ -115,6 +115,9 @@ public class TableProperties {
       "self-optimizing.full.rewrite-all-files";
   public static final boolean SELF_OPTIMIZING_FULL_REWRITE_ALL_FILES_DEFAULT = true;
 
+  public static final String SELF_OPTIMIZING_FILTER = "self-optimizing.filter";
+  public static final String SELF_OPTIMIZING_FILTER_DEFAULT = null;
+
   public static final String SELF_OPTIMIZING_MIN_PLAN_INTERVAL =
       "self-optimizing.min-plan-interval";
   public static final long SELF_OPTIMIZING_MIN_PLAN_INTERVAL_DEFAULT = 60000;
@@ -290,18 +293,17 @@ public class TableProperties {
   public static final String BASE_REFRESH_INTERVAL = "base.refresh-interval";
   public static final long BASE_REFRESH_INTERVAL_DEFAULT = -1L;
 
-  public static final String SPLIT_SIZE = org.apache.iceberg.TableProperties.SPLIT_SIZE;
-  public static final long SPLIT_SIZE_DEFAULT = 134217728; // 128 MB
-
-  public static final String SPLIT_LOOKBACK = org.apache.iceberg.TableProperties.SPLIT_LOOKBACK;
-  public static final int SPLIT_LOOKBACK_DEFAULT = 10;
-
-  public static final String SPLIT_OPEN_FILE_COST =
-      org.apache.iceberg.TableProperties.SPLIT_OPEN_FILE_COST;
-  public static final long SPLIT_OPEN_FILE_COST_DEFAULT = 4 * 1024 * 1024; // 4MB
-
   @Deprecated public static final String UPSERT_ENABLED = "write.upsert.enabled";
   @Deprecated public static final boolean UPSERT_ENABLED_DEFAULT = false;
+
+  /** table read related properties */
+  public static final String SPLIT_OPEN_FILE_COST =
+      org.apache.iceberg.TableProperties.SPLIT_OPEN_FILE_COST;
+
+  public static final long SPLIT_OPEN_FILE_COST_DEFAULT = 4 * 1024 * 1024; // 4MB
+
+  public static final String SPIT_CHANGE_RECORD_COUNT = "read.split.change-record-count";
+  public static final long SPIT_CHANGE_RECORD_COUNT_DEFAULT = 2000000;
 
   /** log store related properties */
   public static final String ENABLE_LOG_STORE = "log-store.enabled";
@@ -346,6 +348,7 @@ public class TableProperties {
   public static final String MERGE_FUNCTION = "merge-function";
   public static final String MERGE_FUNCTION_REPLACE = "replace";
   public static final String MERGE_FUNCTION_PARTIAL_UPDATE = "partial-update";
+  public static final String MERGE_FUNCTION_AGGREGATION = "aggregation";
   public static final String MERGE_FUNCTION_DEFAULT = MERGE_FUNCTION_REPLACE;
 
   /** Protected properties which should not be read by user. */

@@ -102,7 +102,7 @@ public class MixedIcebergOptimizingDataReader implements OptimizingDataReader {
   protected AbstractKeyedDataReader<Record> mixedTableDataReader(Schema requiredSchema) {
 
     // Reuse reader for partial update tables
-    if (MixedTableUtil.isPartialUpdateMergeFunction(table)) {
+    if (MixedTableUtil.isMergeDataFunction(table)) {
       requiredSchema = requiredSchemaForPartialUpdateTable();
       if (reader != null) {
         return reader;
@@ -115,7 +115,7 @@ public class MixedIcebergOptimizingDataReader implements OptimizingDataReader {
       primaryKeySpec = keyedTable.primaryKeySpec();
     }
 
-    if (MixedTableUtil.isPartialUpdateMergeFunction(table)) {
+    if (MixedTableUtil.isMergeDataFunction(table)) {
       reader =
           new GenericMergeDataReader(
               table.io(),
@@ -127,7 +127,8 @@ public class MixedIcebergOptimizingDataReader implements OptimizingDataReader {
               IdentityPartitionConverters::convertConstant,
               false,
               structLikeCollections,
-              true);
+              true,
+              table.properties());
 
     } else {
       reader =

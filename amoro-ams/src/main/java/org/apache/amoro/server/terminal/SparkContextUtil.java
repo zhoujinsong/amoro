@@ -18,15 +18,26 @@
 
 package org.apache.amoro.server.terminal;
 
+import org.apache.amoro.config.ConfigOption;
+import org.apache.amoro.config.ConfigOptions;
 import org.apache.amoro.config.Configurations;
 import org.apache.amoro.server.catalog.CatalogType;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 public class SparkContextUtil {
 
+  public static final String SPARK_CONF_PREFIX = "spark.";
+
+  public static final String SPARK_SQL_EXTENSIONS = "spark.sql.extensions";
+
+  public static final String SPARK_SQL_EXTENSIONS_JOINER = ",";
+  public static final ConfigOption<String> SPARK_SQL_EXTENSIONS_CONF =
+      ConfigOptions.key(SPARK_SQL_EXTENSIONS).stringType().noDefaultValue();
   public static final String ICEBERG_EXTENSION =
       "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions";
   public static final String MIXED_FORMAT_EXTENSION =
@@ -46,15 +57,18 @@ public class SparkContextUtil {
 
   public static Map<String, String> getSparkConf(Configurations sessionConfig) {
     Map<String, String> sparkConf = Maps.newLinkedHashMap();
-    sparkConf.put("spark.sql.extensions", MIXED_FORMAT_EXTENSION + "," + ICEBERG_EXTENSION);
+    String extensionsConf = sessionConfig.get(SPARK_SQL_EXTENSIONS_CONF);
+    sparkConf.put(
+        SPARK_SQL_EXTENSIONS,
+        joinExtensions(extensionsConf, MIXED_FORMAT_EXTENSION, ICEBERG_EXTENSION));
 
     List<String> catalogs = sessionConfig.get(TerminalSessionFactory.SessionConfigOptions.CATALOGS);
-    String catalogUrlBase =
-        sessionConfig.get(TerminalSessionFactory.SessionConfigOptions.CATALOG_URL_BASE);
 
     for (String catalog : catalogs) {
       String connector =
           sessionConfig.get(TerminalSessionFactory.SessionConfigOptions.catalogConnector(catalog));
+      String uri =
+          sessionConfig.get(TerminalSessionFactory.SessionConfigOptions.catalogUri(catalog));
       String catalogClassName;
       String sparkCatalogPrefix = "spark.sql.catalog." + catalog;
       if ("arctic".equalsIgnoreCase(connector)
@@ -70,7 +84,7 @@ public class SparkContextUtil {
           sparkCatalogPrefix = "spark.sql.catalog.spark_catalog";
           catalogClassName = MIXED_FORMAT_SESSION_CATALOG;
         }
-        sparkConf.put(sparkCatalogPrefix + ".url", catalogUrlBase + "/" + catalog);
+        sparkConf.put(sparkCatalogPrefix + ".url", uri);
       } else if ("unified".equalsIgnoreCase(connector)) {
         catalogClassName = UNIFIED_CATALOG;
         String type =
@@ -79,10 +93,10 @@ public class SparkContextUtil {
         if (sessionConfig.getBoolean(
                 TerminalSessionFactory.SessionConfigOptions.USING_SESSION_CATALOG_FOR_HIVE)
             && CatalogType.HIVE.name().equalsIgnoreCase(type)) {
-          sparkCatalogPrefix = "spark.sql.catalog.spark_catalog";
+          sparkCatalogPrefix = "spark.sql.catalog" + catalog;
           catalogClassName = UNIFIED_SESSION_CATALOG;
         }
-        sparkConf.put(sparkCatalogPrefix + ".uri", catalogUrlBase + "/" + catalog);
+        sparkConf.put(sparkCatalogPrefix + ".uri", uri);
       } else {
         catalogClassName = "iceberg".equalsIgnoreCase(connector) ? ICEBERG_CATALOG : PAIMON_CATALOG;
         Map<String, String> properties =
@@ -95,6 +109,24 @@ public class SparkContextUtil {
       }
       sparkConf.put(sparkCatalogPrefix, catalogClassName);
     }
+
+    for (String key : sessionConfig.keySet()) {
+      if (key.startsWith(SPARK_CONF_PREFIX) && !key.equals(SPARK_SQL_EXTENSIONS)) {
+        String value = sessionConfig.getValue(ConfigOptions.key(key).stringType().noDefaultValue());
+        sparkConf.put(key, value);
+      }
+    }
+
     return sparkConf;
+  }
+
+  public static String joinExtensions(String... extensions) {
+    List<String> extensionList = Lists.newArrayList();
+    for (String extension : extensions) {
+      if (extension != null) {
+        extensionList.addAll(Arrays.asList(extension.split(SPARK_SQL_EXTENSIONS_JOINER)));
+      }
+    }
+    return String.join(SPARK_SQL_EXTENSIONS_JOINER, extensionList);
   }
 }

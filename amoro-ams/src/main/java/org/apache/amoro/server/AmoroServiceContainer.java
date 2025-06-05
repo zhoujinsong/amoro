@@ -27,7 +27,10 @@ import org.apache.amoro.api.AmoroTableMetastore;
 import org.apache.amoro.api.OptimizingService;
 import org.apache.amoro.config.ConfigHelpers;
 import org.apache.amoro.config.Configurations;
+import org.apache.amoro.config.shade.utils.ConfigShadeUtils;
 import org.apache.amoro.exception.AmoroRuntimeException;
+import org.apache.amoro.server.catalog.CatalogManager;
+import org.apache.amoro.server.catalog.DefaultCatalogManager;
 import org.apache.amoro.server.dashboard.DashboardServer;
 import org.apache.amoro.server.dashboard.JavalinJsonMapper;
 import org.apache.amoro.server.dashboard.response.ErrorResponse;
@@ -39,12 +42,15 @@ import org.apache.amoro.server.persistence.DataSourceFactory;
 import org.apache.amoro.server.persistence.HttpSessionHandlerFactory;
 import org.apache.amoro.server.persistence.SqlSessionFactoryProvider;
 import org.apache.amoro.server.resource.ContainerMetadata;
+import org.apache.amoro.server.resource.DefaultOptimizerManager;
+import org.apache.amoro.server.resource.InternalContainers;
 import org.apache.amoro.server.resource.OptimizerManager;
-import org.apache.amoro.server.resource.ResourceContainers;
+import org.apache.amoro.server.scheduler.inline.InlineTableExecutors;
+import org.apache.amoro.server.table.DefaultTableManager;
 import org.apache.amoro.server.table.DefaultTableService;
 import org.apache.amoro.server.table.RuntimeHandlerChain;
+import org.apache.amoro.server.table.TableManager;
 import org.apache.amoro.server.table.TableService;
-import org.apache.amoro.server.table.executor.AsyncTableExecutors;
 import org.apache.amoro.server.terminal.TerminalManager;
 import org.apache.amoro.server.utils.ThriftServiceProxy;
 import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTesting;
@@ -92,7 +98,10 @@ public class AmoroServiceContainer {
 
   private final HighAvailabilityContainer haContainer;
   private DataSource dataSource;
-  private DefaultTableService tableService;
+  private CatalogManager catalogManager;
+  private TableManager tableManager;
+  private OptimizerManager optimizerManager;
+  private TableService tableService;
   private DefaultOptimizingService optimizingService;
   private TerminalManager terminalManager;
   private Configurations serviceConfig;
@@ -146,24 +155,33 @@ public class AmoroServiceContainer {
     EventsManager.getInstance();
     MetricManager.getInstance();
 
-    tableService = new DefaultTableService(serviceConfig);
-    optimizingService = new DefaultOptimizingService(serviceConfig, tableService);
+    catalogManager = new DefaultCatalogManager(serviceConfig);
+    tableManager = new DefaultTableManager(serviceConfig, catalogManager);
+    optimizerManager = new DefaultOptimizerManager(serviceConfig, catalogManager);
+
+    tableService = new DefaultTableService(serviceConfig, catalogManager);
+
+    optimizingService =
+        new DefaultOptimizingService(serviceConfig, catalogManager, optimizerManager, tableService);
 
     LOG.info("Setting up AMS table executors...");
-    AsyncTableExecutors.getInstance().setup(tableService, serviceConfig);
+    InlineTableExecutors.getInstance().setup(tableService, serviceConfig);
     addHandlerChain(optimizingService.getTableRuntimeHandler());
-    addHandlerChain(AsyncTableExecutors.getInstance().getDataExpiringExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getSnapshotsExpiringExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getOrphanFilesCleaningExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getDanglingDeleteFilesCleaningExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getOptimizingCommitExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getOptimizingExpiringExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getBlockerExpiringExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getHiveCommitSyncExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getTableRefreshingExecutor());
-    addHandlerChain(AsyncTableExecutors.getInstance().getTagsAutoCreatingExecutor());
 
-    terminalManager = new TerminalManager(serviceConfig, tableService);
+    addHandlerChain(InlineTableExecutors.getInstance().getDataExpiringExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getSnapshotsExpiringExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getOrphanFilesCleaningExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getDanglingDeleteFilesCleaningExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getOptimizingCommitExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getOptimizingExpiringExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getBlockerExpiringExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getHiveCommitSyncExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getTableRefreshingExecutor());
+    addHandlerChain(InlineTableExecutors.getInstance().getTagsAutoCreatingExecutor());
+    tableService.initialize();
+    LOG.info("AMS table service have been initialized");
+    tableManager.setTableService(tableService);
+    terminalManager = new TerminalManager(serviceConfig, catalogManager);
 
     initThriftService();
     startThriftService();
@@ -242,8 +260,14 @@ public class AmoroServiceContainer {
 
   private void initHttpService() {
     DashboardServer dashboardServer =
-        new DashboardServer(serviceConfig, tableService, optimizingService, terminalManager);
-    RestCatalogService restCatalogService = new RestCatalogService(tableService);
+        new DashboardServer(
+            serviceConfig,
+            catalogManager,
+            tableManager,
+            optimizerManager,
+            optimizingService,
+            terminalManager);
+    RestCatalogService restCatalogService = new RestCatalogService(catalogManager, tableManager);
 
     httpServer =
         Javalin.create(
@@ -324,7 +348,7 @@ public class AmoroServiceContainer {
 
   private void initThriftService() throws TTransportException {
     LOG.info("Initializing thrift service...");
-    long maxMessageSize = serviceConfig.getLong(AmoroManagementConf.THRIFT_MAX_MESSAGE_SIZE);
+    long maxMessageSize = serviceConfig.get(AmoroManagementConf.THRIFT_MAX_MESSAGE_SIZE).getBytes();
     int selectorThreads = serviceConfig.getInteger(AmoroManagementConf.THRIFT_SELECTOR_THREADS);
     int workerThreads = serviceConfig.getInteger(AmoroManagementConf.THRIFT_WORKER_THREADS);
     int queueSizePerSelector =
@@ -335,7 +359,7 @@ public class AmoroServiceContainer {
         new AmoroTableMetastore.Processor<>(
             ThriftServiceProxy.createProxy(
                 AmoroTableMetastore.Iface.class,
-                new TableManagementService(tableService),
+                new TableManagementService(catalogManager, tableManager),
                 AmoroRuntimeException::normalizeCompatibly));
     tableManagementServer =
         createThriftServer(
@@ -444,6 +468,8 @@ public class AmoroServiceContainer {
       // If same configurations in files and environment variables, environment variables have
       // higher priority.
       expandedConfigurationMap.putAll(envConfig);
+      // Decrypt the sensitive configurations if specified
+      expandedConfigurationMap = ConfigShadeUtils.decryptConfig(expandedConfigurationMap);
       serviceConfig = Configurations.fromObjectMap(expandedConfigurationMap);
       AmoroManagementConfValidator.validateConfig(serviceConfig);
       dataSource = DataSourceFactory.createDataSource(serviceConfig);
@@ -506,7 +532,7 @@ public class AmoroServiceContainer {
           containerList.add(container);
         }
       }
-      ResourceContainers.init(containerList);
+      InternalContainers.init(containerList);
     }
   }
 
@@ -518,7 +544,8 @@ public class AmoroServiceContainer {
   }
 
   @SuppressWarnings("unchecked")
-  private void expandConfigMap(
+  @VisibleForTesting
+  public static void expandConfigMap(
       Map<String, Object> config, String prefix, Map<String, Object> result) {
     for (Map.Entry<String, Object> entry : config.entrySet()) {
       String key = entry.getKey();
@@ -539,7 +566,12 @@ public class AmoroServiceContainer {
   }
 
   @VisibleForTesting
-  public OptimizerManager getOptimizingService() {
-    return this.optimizingService;
+  public CatalogManager getCatalogManager() {
+    return this.catalogManager;
+  }
+
+  @VisibleForTesting
+  public OptimizerManager getOptimizerManager() {
+    return this.optimizerManager;
   }
 }

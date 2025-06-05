@@ -26,9 +26,9 @@ import org.apache.amoro.TableFormat;
 import org.apache.amoro.config.DataExpirationConfig;
 import org.apache.amoro.data.FileNameRules;
 import org.apache.amoro.scan.TableEntriesScan;
+import org.apache.amoro.server.table.DefaultTableRuntime;
 import org.apache.amoro.server.table.TableConfigurations;
 import org.apache.amoro.server.table.TableOrphanFilesCleaningMetrics;
-import org.apache.amoro.server.table.TableRuntime;
 import org.apache.amoro.server.utils.HiveLocationUtil;
 import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTesting;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Iterables;
@@ -93,7 +93,7 @@ public class MixedTableMaintainer implements TableMaintainer {
   }
 
   @Override
-  public void cleanOrphanFiles(TableRuntime tableRuntime) {
+  public void cleanOrphanFiles(DefaultTableRuntime tableRuntime) {
     if (changeMaintainer != null) {
       changeMaintainer.cleanOrphanFiles(tableRuntime);
     }
@@ -101,7 +101,7 @@ public class MixedTableMaintainer implements TableMaintainer {
   }
 
   @Override
-  public void expireSnapshots(TableRuntime tableRuntime) {
+  public void expireSnapshots(DefaultTableRuntime tableRuntime) {
     if (changeMaintainer != null) {
       changeMaintainer.expireSnapshots(tableRuntime);
     }
@@ -117,7 +117,7 @@ public class MixedTableMaintainer implements TableMaintainer {
   }
 
   @Override
-  public void expireData(TableRuntime tableRuntime) {
+  public void expireData(DefaultTableRuntime tableRuntime) {
     try {
       DataExpirationConfig expirationConfig =
           tableRuntime.getTableConfiguration().getExpiringDataConfig();
@@ -195,11 +195,11 @@ public class MixedTableMaintainer implements TableMaintainer {
 
     CloseableIterable<MixedFileEntry> changeEntries =
         CloseableIterable.transform(
-            changeMaintainer.fileScan(changeTable, dataFilter, expirationConfig),
+            changeMaintainer.fileScan(changeTable, dataFilter, expirationConfig, expireTimestamp),
             e -> new MixedFileEntry(e.getFile(), e.getTsBound(), true));
     CloseableIterable<MixedFileEntry> baseEntries =
         CloseableIterable.transform(
-            baseMaintainer.fileScan(baseTable, dataFilter, expirationConfig),
+            baseMaintainer.fileScan(baseTable, dataFilter, expirationConfig, expireTimestamp),
             e -> new MixedFileEntry(e.getFile(), e.getTsBound(), false));
     IcebergTableMaintainer.ExpireFiles changeExpiredFiles =
         new IcebergTableMaintainer.ExpireFiles();
@@ -243,7 +243,7 @@ public class MixedTableMaintainer implements TableMaintainer {
   }
 
   @Override
-  public void autoCreateTags(TableRuntime tableRuntime) {
+  public void autoCreateTags(DefaultTableRuntime tableRuntime) {
     throw new UnsupportedOperationException("Mixed table doesn't support auto create tags");
   }
 
@@ -297,7 +297,7 @@ public class MixedTableMaintainer implements TableMaintainer {
     }
 
     @Override
-    public void expireSnapshots(TableRuntime tableRuntime) {
+    public void expireSnapshots(DefaultTableRuntime tableRuntime) {
       if (!expireSnapshotEnabled(tableRuntime)) {
         return;
       }
@@ -309,7 +309,7 @@ public class MixedTableMaintainer implements TableMaintainer {
     }
 
     @Override
-    protected long mustOlderThan(TableRuntime tableRuntime, long now) {
+    protected long mustOlderThan(DefaultTableRuntime tableRuntime, long now) {
       return min(
           // The change data ttl time
           now - snapshotsKeepTime(tableRuntime),
@@ -318,7 +318,7 @@ public class MixedTableMaintainer implements TableMaintainer {
     }
 
     @Override
-    protected long snapshotsKeepTime(TableRuntime tableRuntime) {
+    protected long snapshotsKeepTime(DefaultTableRuntime tableRuntime) {
       return tableRuntime.getTableConfiguration().getChangeDataTTLMinutes() * 60 * 1000;
     }
 
@@ -459,14 +459,23 @@ public class MixedTableMaintainer implements TableMaintainer {
     }
 
     @Override
-    protected long mustOlderThan(TableRuntime tableRuntime, long now) {
+    protected long mustOlderThan(DefaultTableRuntime tableRuntime, long now) {
+      DataExpirationConfig expiringDataConfig =
+          tableRuntime.getTableConfiguration().getExpiringDataConfig();
+      long dataExpiringSnapshotTime =
+          expiringDataConfig.isEnabled()
+                  && expiringDataConfig.getBaseOnRule()
+                      == DataExpirationConfig.BaseOnRule.LAST_COMMIT_TIME
+              ? fetchLatestNonOptimizedSnapshotTime(table)
+              : Long.MAX_VALUE;
+
       return min(
           // The snapshots keep time for base store
           now - snapshotsKeepTime(tableRuntime),
           // The snapshot optimizing plan based should not be expired for committing
           fetchOptimizingPlanSnapshotTime(table, tableRuntime),
           // The latest non-optimized snapshot should not be expired for data expiring
-          fetchLatestNonOptimizedSnapshotTime(table),
+          dataExpiringSnapshotTime,
           // The latest flink committed snapshot should not be expired for recovering flink job
           fetchLatestFlinkCommittedSnapshotTime(table),
           // The latest snapshot contains the optimized sequence should not be expired for MOR

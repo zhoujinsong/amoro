@@ -25,6 +25,8 @@ import org.apache.amoro.Constants;
 import org.apache.amoro.ServerTableIdentifier;
 import org.apache.amoro.TableFormat;
 import org.apache.amoro.api.CatalogMeta;
+import org.apache.amoro.api.OptimizingService;
+import org.apache.amoro.client.OptimizingClientPools;
 import org.apache.amoro.config.Configurations;
 import org.apache.amoro.hive.CachedHiveClientPool;
 import org.apache.amoro.hive.HMSClientPool;
@@ -36,6 +38,7 @@ import org.apache.amoro.optimizing.plan.AbstractOptimizingEvaluator;
 import org.apache.amoro.process.ProcessStatus;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.properties.HiveTableProperties;
+import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.catalog.ServerCatalog;
 import org.apache.amoro.server.dashboard.ServerTableDescriptor;
 import org.apache.amoro.server.dashboard.ServerTableProperties;
@@ -50,11 +53,12 @@ import org.apache.amoro.server.dashboard.response.PageResult;
 import org.apache.amoro.server.dashboard.utils.AmsUtil;
 import org.apache.amoro.server.dashboard.utils.CommonUtil;
 import org.apache.amoro.server.optimizing.OptimizingStatus;
-import org.apache.amoro.server.table.TableRuntime;
-import org.apache.amoro.server.table.TableService;
+import org.apache.amoro.server.persistence.TableRuntimeMeta;
+import org.apache.amoro.server.table.TableManager;
 import org.apache.amoro.shade.guava32.com.google.common.base.Function;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.util.concurrent.ThreadFactoryBuilder;
+import org.apache.amoro.shade.thrift.org.apache.thrift.TException;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.table.TableProperties;
@@ -79,6 +83,9 @@ import org.apache.iceberg.SnapshotRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -99,7 +106,8 @@ public class TableController {
   private static final Logger LOG = LoggerFactory.getLogger(TableController.class);
   private static final long UPGRADE_INFO_EXPIRE_INTERVAL = 60 * 60 * 1000;
 
-  private final TableService tableService;
+  private final CatalogManager catalogManager;
+  private final TableManager tableManager;
   private final ServerTableDescriptor tableDescriptor;
   private final Configurations serviceConfig;
   private final ConcurrentHashMap<TableIdentifier, UpgradeRunningInfo> upgradeRunningInfo =
@@ -107,10 +115,12 @@ public class TableController {
   private final ScheduledExecutorService tableUpgradeExecutor;
 
   public TableController(
-      TableService tableService,
+      CatalogManager catalogManager,
+      TableManager tableManager,
       ServerTableDescriptor tableDescriptor,
       Configurations serviceConfig) {
-    this.tableService = tableService;
+    this.catalogManager = catalogManager;
+    this.tableManager = tableManager;
     this.tableDescriptor = tableDescriptor;
     this.serviceConfig = serviceConfig;
     this.tableUpgradeExecutor =
@@ -138,7 +148,7 @@ public class TableController {
             && StringUtils.isNotBlank(database)
             && StringUtils.isNotBlank(tableName),
         "catalog.database.tableName can not be empty in any element");
-    Preconditions.checkState(tableService.catalogExist(catalog), "invalid catalog!");
+    Preconditions.checkState(catalogManager.catalogExist(catalog), "invalid catalog!");
 
     ServerTableMeta serverTableMeta =
         tableDescriptor.getTableDetail(
@@ -146,14 +156,15 @@ public class TableController {
     TableSummary tableSummary = serverTableMeta.getTableSummary();
     Optional<ServerTableIdentifier> serverTableIdentifier =
         Optional.ofNullable(
-            tableService.getServerTableIdentifier(
+            tableManager.getServerTableIdentifier(
                 TableIdentifier.of(catalog, database, tableName).buildTableIdentifier()));
     if (serverTableIdentifier.isPresent()) {
-      TableRuntime tableRuntime = tableService.getRuntime(serverTableIdentifier.get().getId());
-      if (tableRuntime != null) {
-        tableSummary.setOptimizingStatus(tableRuntime.getOptimizingStatus().name());
+      TableRuntimeMeta tableRuntimeMeta =
+          tableManager.getTableRuntimeMata(serverTableIdentifier.get());
+      if (tableRuntimeMeta != null) {
+        tableSummary.setOptimizingStatus(tableRuntimeMeta.getTableStatus().name());
         AbstractOptimizingEvaluator.PendingInput tableRuntimeSummary =
-            tableRuntime.getTableSummary();
+            tableRuntimeMeta.getTableSummary();
         if (tableRuntimeSummary != null) {
           tableSummary.setHealthScore(tableRuntimeSummary.getHealthScore());
         }
@@ -178,7 +189,7 @@ public class TableController {
             && StringUtils.isNotBlank(db)
             && StringUtils.isNotBlank(table),
         "catalog.database.tableName can not be empty in any element");
-    ServerCatalog serverCatalog = tableService.getServerCatalog(catalog);
+    ServerCatalog serverCatalog = catalogManager.getServerCatalog(catalog);
     CatalogMeta catalogMeta = serverCatalog.getMetadata();
     TableMetaStore tableMetaStore = CatalogUtil.buildMetaStore(catalogMeta);
     HMSClientPool hmsClientPool =
@@ -217,7 +228,7 @@ public class TableController {
         "catalog.database.tableName can not be empty in any element");
     UpgradeHiveMeta upgradeHiveMeta = ctx.bodyAsClass(UpgradeHiveMeta.class);
 
-    ServerCatalog serverCatalog = tableService.getServerCatalog(catalog);
+    ServerCatalog serverCatalog = catalogManager.getServerCatalog(catalog);
     CatalogMeta catalogMeta = serverCatalog.getMetadata();
     String amsUri = AmsUtil.getAMSThriftAddress(serviceConfig, Constants.THRIFT_TABLE_SERVICE_NAME);
     catalogMeta.putToCatalogProperties(CatalogMetaProperties.AMS_URI, amsUri);
@@ -313,7 +324,23 @@ public class TableController {
     String db = ctx.pathParam("db");
     String table = ctx.pathParam("table");
     String type = ctx.queryParam("type");
-
+    String beginTime = ctx.queryParam("beginTime");
+    String endTime = ctx.queryParam("endTime");
+    String pattern = "yyyy-MM-dd HH:mm:ss";
+    if (StringUtils.isNotEmpty(beginTime)) {
+      boolean validBeginDateTime = isValidDateTime(beginTime, pattern);
+      Preconditions.checkArgument(
+          validBeginDateTime, "Begin time is not a valid time format:%s", pattern);
+    } else {
+      beginTime = null;
+    }
+    if (StringUtils.isNotEmpty(endTime)) {
+      boolean validEndDateTime = isValidDateTime(endTime, pattern);
+      Preconditions.checkArgument(
+          validEndDateTime, "End time is not a valid time format:%s", pattern);
+    } else {
+      endTime = null;
+    }
     if (StringUtils.isBlank(type)) {
       // treat all blank string to null
       type = null;
@@ -333,11 +360,46 @@ public class TableController {
         StringUtils.isBlank(status) ? null : ProcessStatus.valueOf(status);
     Pair<List<OptimizingProcessInfo>, Integer> optimizingProcessesInfo =
         tableDescriptor.getOptimizingProcessesInfo(
-            tableIdentifier.buildTableIdentifier(), type, processStatus, limit, offset);
+            tableIdentifier.buildTableIdentifier(),
+            type,
+            processStatus,
+            limit,
+            offset,
+            beginTime,
+            endTime);
     List<OptimizingProcessInfo> result = optimizingProcessesInfo.getLeft();
     int total = optimizingProcessesInfo.getRight();
 
     ctx.json(OkResponse.of(PageResult.of(result, total)));
+  }
+
+  public boolean isValidDateTime(String dateTimeStr, String pattern) {
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern);
+    try {
+      LocalDateTime.parse(dateTimeStr, formatter);
+      return true;
+    } catch (DateTimeParseException e) {
+      return false;
+    }
+  }
+
+  /**
+   * get single optimizing process.
+   *
+   * @param ctx - context for handling the request and response
+   */
+  public void getOptimizingProcessByProcessId(Context ctx) {
+
+    String catalog = ctx.pathParam("catalog");
+    String db = ctx.pathParam("db");
+    String table = ctx.pathParam("table");
+
+    String processId = ctx.queryParam("processId");
+    Preconditions.checkArgument(StringUtils.isNotEmpty(processId), "ProcessId should not be empty");
+    TableIdentifier tableIdentifier = TableIdentifier.of(catalog, db, table);
+    OptimizingProcessInfo optimizingProcessInfo =
+        tableDescriptor.getOptimizingProcessInfo(tableIdentifier.buildTableIdentifier(), processId);
+    ctx.json(OkResponse.of(optimizingProcessInfo));
   }
 
   public void getOptimizingTypes(Context ctx) {
@@ -518,7 +580,7 @@ public class TableController {
         StringUtils.isNotBlank(catalog) && StringUtils.isNotBlank(db),
         "catalog.database can not be empty in any element");
 
-    ServerCatalog serverCatalog = tableService.getServerCatalog(catalog);
+    ServerCatalog serverCatalog = catalogManager.getServerCatalog(catalog);
     Function<TableFormat, String> formatToType =
         format -> {
           if (format.equals(TableFormat.MIXED_HIVE) || format.equals(TableFormat.MIXED_ICEBERG)) {
@@ -584,7 +646,7 @@ public class TableController {
     String keywords = ctx.queryParam("keywords");
 
     List<String> dbList =
-        tableService.getServerCatalog(catalog).listDatabases().stream()
+        catalogManager.getServerCatalog(catalog).listDatabases().stream()
             .filter(item -> StringUtils.isBlank(keywords) || item.contains(keywords))
             .collect(Collectors.toList());
     ctx.json(OkResponse.of(dbList));
@@ -596,7 +658,7 @@ public class TableController {
    * @param ctx - context for handling the request and response
    */
   public void getCatalogs(Context ctx) {
-    List<CatalogMeta> catalogs = tableService.listCatalogMetas();
+    List<CatalogMeta> catalogs = catalogManager.listCatalogMetas();
     ctx.json(OkResponse.of(catalogs));
   }
 
@@ -666,31 +728,31 @@ public class TableController {
     String catalog = ctx.pathParam("catalog");
     String db = ctx.pathParam("db");
     String table = ctx.pathParam("table");
-    String processId = ctx.pathParam("processId");
+    String processIds = ctx.pathParam("processId");
     Preconditions.checkArgument(
         StringUtils.isNotBlank(catalog)
             && StringUtils.isNotBlank(db)
             && StringUtils.isNotBlank(table),
         "catalog.database.tableName can not be empty in any element");
-    Preconditions.checkState(tableService.catalogExist(catalog), "invalid catalog!");
-
+    Preconditions.checkState(catalogManager.catalogExist(catalog), "invalid catalog!");
+    long processId = Long.parseLong(processIds);
     ServerTableIdentifier serverTableIdentifier =
-        tableService.getServerTableIdentifier(
+        tableManager.getServerTableIdentifier(
             TableIdentifier.of(catalog, db, table).buildTableIdentifier());
-    TableRuntime tableRuntime =
-        serverTableIdentifier != null
-            ? tableService.getRuntime(serverTableIdentifier.getId())
-            : null;
+    TableRuntimeMeta meta = tableManager.getTableRuntimeMata(serverTableIdentifier);
+    if (meta == null || meta.getOptimizingProcessId() != processId) {
+      throw new IllegalArgumentException(
+          String.format("Can't cancel optimizing process %s", processId));
+    }
 
-    Preconditions.checkArgument(
-        tableRuntime != null
-            && tableRuntime.getOptimizingProcess() != null
-            && Objects.equals(
-                tableRuntime.getOptimizingProcess().getProcessId(), Long.parseLong(processId)),
-        "Can't cancel optimizing process %s",
-        processId);
-
-    tableRuntime.getOptimizingProcess().close();
+    OptimizingService.Iface client =
+        OptimizingClientPools.getClient(
+            AmsUtil.getAMSThriftAddress(serviceConfig, Constants.THRIFT_OPTIMIZING_SERVICE_NAME));
+    try {
+      client.cancelProcess(processId);
+    } catch (TException e) {
+      throw new IllegalStateException("Failed to cancel optimizing process:" + e.getMessage());
+    }
     ctx.json(OkResponse.ok());
   }
 

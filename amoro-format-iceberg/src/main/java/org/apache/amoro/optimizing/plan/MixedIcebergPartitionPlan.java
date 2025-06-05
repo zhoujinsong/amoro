@@ -31,12 +31,14 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
 import org.apache.amoro.table.MixedTable;
 import org.apache.amoro.table.TableProperties;
+import org.apache.amoro.utils.MixedTableUtil;
 import org.apache.amoro.utils.TablePropertyUtil;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileContent;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.util.Pair;
+import org.apache.iceberg.util.PropertyUtil;
 
 import javax.annotation.Nonnull;
 
@@ -314,7 +316,7 @@ public class MixedIcebergPartitionPlan extends AbstractPartitionPlan {
       List<SplitTask> result = Lists.newArrayList();
       rootTree.completeTree();
       List<FileTree> subTrees = Lists.newArrayList();
-      rootTree.splitFileTree(subTrees, new SplitIfNoFileExists());
+      rootTree.splitFileTree(subTrees, splitter());
       for (FileTree subTree : subTrees) {
         Map<DataFile, List<ContentFile<?>>> rewriteDataFiles = Maps.newHashMap();
         Map<DataFile, List<ContentFile<?>>> rewritePosDataFiles = Maps.newHashMap();
@@ -337,17 +339,41 @@ public class MixedIcebergPartitionPlan extends AbstractPartitionPlan {
     }
   }
 
+  private Predicate<FileTree> splitter() {
+    if (MixedTableUtil.isMergeDataFunction(tableObject)) {
+      long splitChangeRecords =
+          PropertyUtil.propertyAsLong(
+              tableObject.properties(),
+              TableProperties.SPIT_CHANGE_RECORD_COUNT,
+              TableProperties.SPIT_CHANGE_RECORD_COUNT_DEFAULT);
+      return new SplitByChangeCount(splitChangeRecords);
+    } else {
+      return new SplitIfNoFileExists();
+    }
+  }
+
   private static class FileTree {
 
     private final DataTreeNode node;
-    private final Map<DataFile, List<ContentFile<?>>> rewriteDataFiles = Maps.newHashMap();
-    private final Map<DataFile, List<ContentFile<?>>> rewritePosDataFiles = Maps.newHashMap();
+    private final Map<DataFile, List<ContentFile<?>>> rewriteDataFiles;
+    private final Map<DataFile, List<ContentFile<?>>> rewritePosDataFiles;
 
     private FileTree left;
     private FileTree right;
 
     public FileTree(DataTreeNode node) {
       this.node = node;
+      this.rewriteDataFiles = Maps.newHashMap();
+      this.rewritePosDataFiles = Maps.newHashMap();
+    }
+
+    public FileTree(
+        DataTreeNode node,
+        Map<DataFile, List<ContentFile<?>>> rewriteDataFiles,
+        Map<DataFile, List<ContentFile<?>>> rewritePosDataFiles) {
+      this.node = node;
+      this.rewriteDataFiles = rewriteDataFiles;
+      this.rewritePosDataFiles = rewritePosDataFiles;
     }
 
     public static FileTree newTreeRoot() {
@@ -381,12 +407,14 @@ public class MixedIcebergPartitionPlan extends AbstractPartitionPlan {
      */
     public void splitFileTree(List<FileTree> collector, Predicate<FileTree> canSplit) {
       if (canSplit.test(this)) {
-        if (left != null) {
-          left.splitFileTree(collector, canSplit);
+        if (left == null) {
+          left = new FileTree(node.left(), rewriteDataFiles, rewritePosDataFiles);
         }
-        if (right != null) {
-          right.splitFileTree(collector, canSplit);
+        left.splitFileTree(collector, canSplit);
+        if (right == null) {
+          right = new FileTree(node.right(), rewriteDataFiles, rewritePosDataFiles);
         }
+        right.splitFileTree(collector, canSplit);
       } else {
         collector.add(this);
       }
@@ -488,6 +516,37 @@ public class MixedIcebergPartitionPlan extends AbstractPartitionPlan {
     @Override
     public boolean test(FileTree fileTree) {
       return !fileTree.isLeaf() && fileTree.isRootEmpty();
+    }
+  }
+
+  private static class SplitByChangeCount extends SplitIfNoFileExists {
+
+    private final long splitChangeRecords;
+
+    public SplitByChangeCount(long splitChangeRecords) {
+      this.splitChangeRecords = splitChangeRecords;
+    }
+
+    @Override
+    public boolean test(FileTree fileTree) {
+      if (!super.test(fileTree)) {
+        long changeRecords =
+            fileTree.rewriteDataFiles.keySet().stream()
+                .filter(file -> ((PrimaryKeyedFile) file).type() == DataFileType.CHANGE_FILE)
+                .mapToLong(
+                    file -> {
+                      DataTreeNode fileNode = ((PrimaryKeyedFile) file).node();
+                      if (fileTree.node.isSonOf(fileNode)) {
+                        return file.recordCount()
+                            / ((fileTree.node.getMask() + 1) / (fileNode.getMask() + 1));
+                      }
+                      return file.recordCount();
+                    })
+                .sum();
+        return changeRecords > splitChangeRecords;
+      } else {
+        return true;
+      }
     }
   }
 }

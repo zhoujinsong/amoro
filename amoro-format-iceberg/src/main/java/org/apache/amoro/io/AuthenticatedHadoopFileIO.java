@@ -22,6 +22,7 @@ import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTe
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.table.TableMetaStore;
+import org.apache.amoro.utils.LoadLocalConfigurationUtil;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
@@ -264,5 +265,13 @@ public class AuthenticatedHadoopFileIO extends HadoopFileIO
 
   private FileSystem getFs(Path path) {
     return Util.getFs(path, conf());
+  }
+
+  private Object readResolve() {
+    if (LoadLocalConfigurationUtil.loadLocalConf()) {
+      return new AuthenticatedHadoopFileIO(this.getTableMetaStore());
+    } else {
+      return this;
+    }
   }
 }

@@ -44,7 +44,13 @@ if [ ! -f $STDERR_LOG ];then
     touch $STDERR_LOG
 fi
 
-JAVA_OPTS="-Xmx$2m -Dlog.home=${OPTIMIZER_LOG_DIR}"
+JAVA_OPTS="-server -XX:+UseG1GC -Xmx$2m \
+-Dlog4j.configurationFile=${OPTIMIZER_LOG_CONF_FILE} -Dlog.home=${OPTIMIZER_LOG_DIR} \
+-XX:+ExitOnOutOfMemoryError \
+-verbose:gc -XX:+PrintGCDetails -XX:MaxGCPauseMillis=200 \
+-Xloggc:$OPTIMIZER_LOG_DIR/gc.log -XX:+PrintGCDateStamps \
+-XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=10 -XX:GCLogFileSize=10M"
+
 RUN_SERVER="org.apache.amoro.optimizer.standalone.StandaloneOptimizer"
 CMDS="$JAVA_RUN $JAVA_OPTS $RUN_SERVER $ARGS"
 

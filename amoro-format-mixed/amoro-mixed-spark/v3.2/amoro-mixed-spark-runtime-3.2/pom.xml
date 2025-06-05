@@ -23,7 +23,7 @@
     <parent>
         <artifactId>amoro-mixed-spark</artifactId>
         <groupId>org.apache.amoro</groupId>
-        <version>0.8-SNAPSHOT</version>
+        <version>0.9-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -32,6 +32,10 @@
     <packaging>jar</packaging>
     <name>Amoro Project Mixed Format Spark 3.2 Runtime</name>
     <url>https://amoro.apache.org</url>
+
+    <properties>
+        <iceberg.version>1.4.3</iceberg.version>
+    </properties>
 
     <dependencies>
         <dependency>

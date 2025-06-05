@@ -40,6 +40,7 @@ import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.StructProjection;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
@@ -57,6 +58,8 @@ public abstract class AbstractMergeDataReader<T> extends AbstractKeyedDataReader
   private ChangeDataMap<T> changeDataMap;
   // Reuse change data cache only for self-optimizing task
   private final boolean reuseChangeDataCache;
+  protected final Types.StructType struct;
+  protected final Map<String, String> properties;
 
   public AbstractMergeDataReader(
       AuthenticatedFileIO fileIO,
@@ -68,7 +71,8 @@ public abstract class AbstractMergeDataReader<T> extends AbstractKeyedDataReader
       BiFunction<Type, Object, Object> convertConstant,
       boolean reuseContainer,
       StructLikeCollections structLikeCollections,
-      boolean reuseChangeDataCache) {
+      boolean reuseChangeDataCache,
+      Map<String, String> properties) {
     super(
         fileIO,
         tableSchema,
@@ -80,6 +84,8 @@ public abstract class AbstractMergeDataReader<T> extends AbstractKeyedDataReader
         reuseContainer,
         structLikeCollections);
     this.reuseChangeDataCache = reuseChangeDataCache;
+    this.struct = projectedSchema.asStruct();
+    this.properties = properties;
   }
 
   @Override

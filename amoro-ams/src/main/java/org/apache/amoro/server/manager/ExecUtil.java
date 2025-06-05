@@ -22,7 +22,6 @@ import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,12 +65,8 @@ public class ExecUtil {
 
     @Override
     public void run() {
-      try {
-        List<String> temp = IOUtils.readLines(is).stream().collect(Collectors.toList());
-        output.addAll(temp);
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+      List<String> temp = IOUtils.readLines(is).stream().collect(Collectors.toList());
+      output.addAll(temp);
     }
 
     public List<String> getOutput() {

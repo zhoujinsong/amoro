@@ -244,7 +244,7 @@ public class FlinkSplitPlanner {
               .forEach(
                   keyedTableScanTask -> {
                     allBaseTasks.addAll(keyedTableScanTask.baseTasks());
-
+                    taskMap(keyedTableScanTask.changeTasks(), true, transactionTasks);
                     taskMap(keyedTableScanTask.insertTasks(), true, transactionTasks);
                     taskMap(keyedTableScanTask.mixedEquityDeletes(), false, transactionTasks);
                   });

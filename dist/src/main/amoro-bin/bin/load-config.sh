@@ -31,11 +31,17 @@ fi
 if [ -z "$AMORO_LOG_DIR" ]; then
     export AMORO_LOG_DIR="${AMORO_HOME}/logs"
 fi
+
 if [ -z "$AMORO_CONF_DIR" ]; then
     export AMORO_CONF_DIR="${AMORO_HOME}/conf"
 fi
+
 if [ -z "$AMORO_LOG_CONF_FILE" ]; then
     export AMORO_LOG_CONF_FILE="${AMORO_CONF_DIR}/log4j2.xml"
+fi
+
+if [ -z "$OPTIMIZER_LOG_CONF_FILE" ]; then
+    export OPTIMIZER_LOG_CONF_FILE="${AMORO_CONF_DIR}/optimizer-log4j2.xml"
 fi
 
 export AMORO_ENV_FILE=${AMORO_CONF_DIR}/env.sh

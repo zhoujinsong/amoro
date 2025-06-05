@@ -74,20 +74,7 @@ or build the `amoro-spark-optimizer` image by:
 ```
 
 ## Get Helm Charts
-
-You can obtain the latest official release chart by adding the official Helm repository.
-
-```shell
-$ helm repo add amoro https://netease.github.io/amoro/charts
-$ helm search repo amoro 
-NAME           CHART VERSION    APP VERSION        DESCRIPTION           
-amoro/amoro    0.1.0            0.7.0              A Helm chart for Amoro 
-
-$ helm pull amoro/amoro 
-$ tar zxvf amoro-*.tgz
-```
-
-Alternatively, you can find the latest charts directly from the Github source code.
+You can find the latest charts directly from the Github source code.
 
 ```shell
 $ git clone https://github.com/apache/amoro.git
@@ -156,17 +143,17 @@ ingress:
 
 ### Configure the database.
 
-AMS default is to use Derby database for storage. When the pod is destroyed, the data will also disappear.
-In production environments, we recommend using MySQL as the storage for system data.
+AMS uses embedded [Apache Derby](https://db.apache.org/derby/) as its backend storage by default.
+In production environments, we recommend using a RDBMS(Relational Database Management System) with higher availability guarantees as the storage for system data, you can ref to [Database Configuration](/deployment/#configure-system-database) for more detail.
 
 ```yaml
 amoroConf: 
   database:
-    type: mysql
-    driver: com.mysql.cj.jdbc.Driver
-    url: <jdbc-uri>
-    username: <mysql-user>
-    password: <mysql-password>
+    type: ${your_database_type}
+    driver: ${your_database_driver}
+    url: ${your_jdbc_url}
+    username: ${your_username}
+    password: ${your_password}
 ```
 
 
@@ -224,6 +211,8 @@ optimizer:
       kube-config-path: "~/.kube/config"
       image: "apache/amoro:latest"
       pullPolicy: "IfNotPresent"
+      # configure additional parameters by using the extra. prefix
+      # extra.jvm.heap.ratio: "0.8"
 ```
 
 To use PodTemplate, you need to copy and paste the following into the `kubernetes.properties`.

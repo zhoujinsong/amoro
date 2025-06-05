@@ -18,6 +18,7 @@
 
 package org.apache.amoro.scan;
 
+import org.apache.amoro.data.DataFileType;
 import org.apache.amoro.data.DataTreeNode;
 import org.apache.amoro.data.DefaultKeyedFile;
 import org.apache.amoro.scan.expressions.BasicPartitionEvaluator;
@@ -161,6 +162,25 @@ public class BasicKeyedTableScan implements KeyedTableScan {
             table.properties(),
             TableProperties.BASE_FILE_INDEX_HASH_BUCKET,
             TableProperties.BASE_FILE_INDEX_HASH_BUCKET_DEFAULT);
+
+    long splitChangeCount =
+        PropertyUtil.propertyAsLong(
+            table.properties(),
+            TableProperties.SPIT_CHANGE_RECORD_COUNT,
+            TableProperties.SPIT_CHANGE_RECORD_COUNT_DEFAULT);
+
+    long changeRecordCount =
+        keyedTableTasks.stream()
+            .filter(task -> task.file().type() == DataFileType.CHANGE_FILE)
+            .mapToLong(task -> task.file().recordCount())
+            .sum();
+    int splitCount = FileScanTaskUtil.validScanBucket((int) (changeRecordCount / splitChangeCount));
+    scanBucketCount = Math.max(scanBucketCount, splitCount);
+    LOG.info(
+        "Split {} scan tasks with {} change records under partition {}",
+        scanBucketCount,
+        changeRecordCount,
+        partition);
 
     Map<DataTreeNode, NodeFileScanTask> nodeScanTaskMap =
         FileScanTaskUtil.generateScanTreeNodes(scanBucketCount).stream()

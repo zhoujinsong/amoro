@@ -56,7 +56,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /** Kubernetes Optimizer Container with Standalone Optimizer */
-public class KubernetesOptimizerContainer extends AbstractResourceContainer {
+public class KubernetesOptimizerContainer extends AbstractOptimizerContainer {
 
   private static final Logger LOG = LoggerFactory.getLogger(KubernetesOptimizerContainer.class);
 
@@ -72,6 +72,19 @@ public class KubernetesOptimizerContainer extends AbstractResourceContainer {
   private static final String NAME_PREFIX = "amoro-optimizer-";
 
   private static final String KUBERNETES_NAME_PROPERTIES = "name";
+
+  private static final String EXTRA_PROPERTY_PREFIX = "extra.";
+
+  private static final Map<String, String> EXTRA_PROPERTY_DEFAULTS = new HashMap<>();
+
+  static {
+    EXTRA_PROPERTY_DEFAULTS.put("jvm.heap.ratio", "0.8");
+  }
+
+  private String getExtraProperty(Map<String, String> properties, String key) {
+    return properties.getOrDefault(
+        EXTRA_PROPERTY_PREFIX + key, EXTRA_PROPERTY_DEFAULTS.getOrDefault(key, null));
+  }
 
   private KubernetesClient client;
 
@@ -148,6 +161,7 @@ public class KubernetesOptimizerContainer extends AbstractResourceContainer {
       Resource resource, Map<String, String> groupProperties) {
     long memoryPerThread;
     long memory;
+    long jvmHeapMemory;
 
     if (resource.getMemoryMb() > 0) {
       memory = resource.getMemoryMb();
@@ -155,11 +169,15 @@ public class KubernetesOptimizerContainer extends AbstractResourceContainer {
       memoryPerThread = Long.parseLong(checkAndGetProperty(groupProperties, MEMORY_PROPERTY));
       memory = memoryPerThread * resource.getThreadCount();
     }
+
+    double jvmHeapRatio = Double.parseDouble(getExtraProperty(groupProperties, "jvm.heap.ratio"));
+    jvmHeapMemory = (long) (memory * jvmHeapRatio);
+
     // point at amoro home in docker image
     String startUpArgs =
         String.format(
             "/entrypoint.sh optimizer %s %s",
-            memory, super.buildOptimizerStartupArgsString(resource));
+            jvmHeapMemory, super.buildOptimizerStartupArgsString(resource));
     LOG.info("Starting k8s optimizer using k8s client with start command : {}", startUpArgs);
 
     String namespace = groupProperties.getOrDefault(NAMESPACE, "default");
@@ -330,7 +348,7 @@ public class KubernetesOptimizerContainer extends AbstractResourceContainer {
   }
 
   @Override
-  public void releaseOptimizer(Resource resource) {
+  public void releaseResource(Resource resource) {
     String resourceId = resource.getResourceId();
     LOG.info("release Kubernetes Optimizer Container {}", resourceId);
     String namespace = resource.getProperties().get(NAMESPACE);

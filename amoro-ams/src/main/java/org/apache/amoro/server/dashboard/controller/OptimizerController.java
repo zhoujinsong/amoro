@@ -25,8 +25,9 @@ import org.apache.amoro.resource.ResourceType;
 import org.apache.amoro.server.DefaultOptimizingService;
 import org.apache.amoro.server.dashboard.response.OkResponse;
 import org.apache.amoro.server.resource.ContainerMetadata;
+import org.apache.amoro.server.resource.InternalContainers;
 import org.apache.amoro.server.resource.OptimizerInstance;
-import org.apache.amoro.server.resource.ResourceContainers;
+import org.apache.amoro.server.resource.OptimizerManager;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 
 import java.util.List;
@@ -36,9 +37,13 @@ import java.util.stream.Collectors;
 /** The controller that handles optimizer requests. */
 public class OptimizerController {
 
-  private final DefaultOptimizingService optimizerManager;
+  private final OptimizerManager optimizerManager;
 
-  public OptimizerController(DefaultOptimizingService optimizerManager) {
+  private final DefaultOptimizingService optimizingService;
+
+  public OptimizerController(
+      DefaultOptimizingService optimizingService, OptimizerManager optimizerManager) {
+    this.optimizingService = optimizingService;
     this.optimizerManager = optimizerManager;
   }
 
@@ -62,7 +67,7 @@ public class OptimizerController {
             "The resource ID %s has not been indexed" + " to any optimizer.", resourceId));
     Resource resource = optimizerManager.getResource(resourceId);
     resource.getProperties().putAll(optimizerInstances.get(0).getProperties());
-    ResourceContainers.get(resource.getContainerName()).releaseOptimizer(resource);
+    InternalContainers.get(resource.getContainerName()).releaseResource(resource);
     optimizerManager.deleteResource(resourceId);
     optimizerManager.deleteOptimizer(resource.getGroupName(), resourceId);
     ctx.json(OkResponse.of("Success to release optimizer"));
@@ -80,7 +85,7 @@ public class OptimizerController {
             .setProperties(resourceGroup.getProperties())
             .setThreadCount(parallelism)
             .build();
-    ResourceContainers.get(resource.getContainerName()).requestResource(resource);
+    InternalContainers.get(resource.getContainerName()).requestResource(resource);
     optimizerManager.createResource(resource);
     ctx.json(OkResponse.of("success to create optimizer"));
   }
@@ -89,7 +94,7 @@ public class OptimizerController {
   public void getContainers(Context ctx) {
     ctx.json(
         OkResponse.of(
-            ResourceContainers.getMetadataList().stream()
+            InternalContainers.getMetadataList().stream()
                 .map(ContainerMetadata::getName)
                 .collect(Collectors.toList())));
   }

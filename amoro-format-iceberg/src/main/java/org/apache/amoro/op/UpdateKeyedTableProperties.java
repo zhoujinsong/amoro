@@ -22,6 +22,7 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
 import org.apache.amoro.table.KeyedTable;
 import org.apache.amoro.table.UnkeyedTable;
+import org.apache.amoro.utils.MixedTableUtil;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.UpdateProperties;
@@ -66,6 +67,8 @@ public class UpdateKeyedTableProperties implements UpdateProperties {
       }
     }
     newProperties.putAll(propsSet);
+    MixedTableUtil.validateTableProperties(
+        keyedTable.schema(), keyedTable.spec(), keyedTable.primaryKeySpec(), newProperties);
     return newProperties;
   }
 

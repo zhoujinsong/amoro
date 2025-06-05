@@ -85,7 +85,7 @@ Kubernetes container support the following properties:
 | ams-optimizing-uri        | false    | N/A           | URI of AMS thrift self-optimizing endpoint. This could be used if the ams.server-expose-host is not available |
 | cpu.factor                | false    | "1.0"         | CPU factor when request kubernetes resource. Default 1 Cpu pre thread                                         |
 | memory                    | true     | N/A           | Memory usage for pre thread                                                                                   |
-
+| extra.jvm.heap.ratio      | false    | 0.8           | The ratio of JVM heap memory to total pod memory                                                              |
 
 ```yaml
 containers:
@@ -338,10 +338,7 @@ You can submit optimizer in your own Flink task development platform or local Fl
  ${AMORO_HOME}/plugin/optimizer/flink/optimizer-job.jar \
  -a thrift://127.0.0.1:1261 \
  -g flinkGroup \
- -p 1 \
- -eds \
- -dsp /tmp \
- -msz 512
+ -p 1
 ```
 The description of the relevant parameters is shown in the following table:
 
@@ -368,10 +365,7 @@ Or you can submit optimizer in your own Spark task development platform or local
  ${AMORO_HOME}/plugin/optimizer/spark/optimizer-job.jar \
  -a thrift://127.0.0.1:1261 \
  -g sparkGroup \
- -p 1 \
- -eds \
- -dsp /tmp \
- -msz 512
+ -p 1
 ```
 The description of the relevant parameters is shown in the following table:
 

@@ -23,9 +23,10 @@ import org.apache.amoro.TableFormat;
 import org.apache.amoro.api.TableIdentifier;
 import org.apache.amoro.config.Configurations;
 import org.apache.amoro.process.ProcessStatus;
+import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.catalog.ServerCatalog;
 import org.apache.amoro.server.persistence.PersistentBase;
-import org.apache.amoro.server.table.TableService;
+import org.apache.amoro.server.table.TableManager;
 import org.apache.amoro.table.descriptor.AmoroSnapshotsOfTable;
 import org.apache.amoro.table.descriptor.ConsumerInfo;
 import org.apache.amoro.table.descriptor.DDLInfo;
@@ -50,10 +51,13 @@ public class ServerTableDescriptor extends PersistentBase {
 
   private final Map<TableFormat, FormatTableDescriptor> formatDescriptorMap = new HashMap<>();
 
-  private final TableService tableService;
+  private final CatalogManager catalogManager;
+  private final TableManager tableManager;
 
-  public ServerTableDescriptor(TableService tableService, Configurations serviceConfig) {
-    this.tableService = tableService;
+  public ServerTableDescriptor(
+      CatalogManager catalogManager, TableManager tableManager, Configurations serviceConfig) {
+    this.tableManager = tableManager;
+    this.catalogManager = catalogManager;
 
     // All table formats will jointly reuse the work thread pool named iceberg-worker-pool-%d
     ExecutorService executorService = ThreadPools.getWorkerPool();
@@ -125,11 +129,24 @@ public class ServerTableDescriptor extends PersistentBase {
   }
 
   public Pair<List<OptimizingProcessInfo>, Integer> getOptimizingProcessesInfo(
-      TableIdentifier tableIdentifier, String type, ProcessStatus status, int limit, int offset) {
+      TableIdentifier tableIdentifier,
+      String type,
+      ProcessStatus status,
+      int limit,
+      int offset,
+      String beginTime,
+      String endTime) {
     AmoroTable<?> amoroTable = loadTable(tableIdentifier);
     FormatTableDescriptor formatTableDescriptor = formatDescriptorMap.get(amoroTable.format());
     return formatTableDescriptor.getOptimizingProcessesInfo(
-        amoroTable, type, status, limit, offset);
+        amoroTable, type, status, limit, offset, beginTime, endTime);
+  }
+
+  public OptimizingProcessInfo getOptimizingProcessInfo(
+      TableIdentifier tableIdentifier, String processId) {
+    AmoroTable<?> amoroTable = loadTable(tableIdentifier);
+    FormatTableDescriptor formatTableDescriptor = formatDescriptorMap.get(amoroTable.format());
+    return formatTableDescriptor.getSingleOptimizingProcessInfo(amoroTable, processId);
   }
 
   public List<OptimizingTaskInfo> getOptimizingProcessTaskInfos(
@@ -146,7 +163,7 @@ public class ServerTableDescriptor extends PersistentBase {
   }
 
   private AmoroTable<?> loadTable(TableIdentifier identifier) {
-    ServerCatalog catalog = tableService.getServerCatalog(identifier.getCatalog());
+    ServerCatalog catalog = catalogManager.getServerCatalog(identifier.getCatalog());
     return catalog.loadTable(identifier.getDatabase(), identifier.getTableName());
   }
 }

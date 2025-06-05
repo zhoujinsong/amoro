@@ -23,12 +23,12 @@
     <parent>
         <groupId>org.apache.amoro</groupId>
         <artifactId>amoro-parent</artifactId>
-        <version>0.8-SNAPSHOT</version>
+        <version>0.9-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>amoro-format-paimon</artifactId>
-    <name>Amoro Paimon Format Integration</name>
+    <name>Amoro Project Paimon Format</name>
 
     <dependencies>
         <dependency>

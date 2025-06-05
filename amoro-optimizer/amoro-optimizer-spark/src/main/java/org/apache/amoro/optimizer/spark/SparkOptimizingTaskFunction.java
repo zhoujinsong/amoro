@@ -22,7 +22,11 @@ import org.apache.amoro.api.OptimizingTask;
 import org.apache.amoro.api.OptimizingTaskResult;
 import org.apache.amoro.optimizer.common.OptimizerConfig;
 import org.apache.amoro.optimizer.common.OptimizerExecutor;
+import org.apache.amoro.utils.LoadLocalConfigurationUtil;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.spark.SparkEnv;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.deploy.SparkHadoopUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +46,13 @@ public class SparkOptimizingTaskFunction implements Function<OptimizingTask, Opt
 
   @Override
   public OptimizingTaskResult call(OptimizingTask task) {
+    if (!LoadLocalConfigurationUtil.checkInitialize()) {
+      LoadLocalConfigurationUtil.init(getSparkConfMap());
+    }
     return OptimizerExecutor.executeTask(config, threadId, task, LOG);
+  }
+
+  private Configuration getSparkConfMap() {
+    return SparkHadoopUtil.get().newConfiguration(SparkEnv.get().conf());
   }
 }

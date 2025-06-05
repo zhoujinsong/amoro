@@ -508,7 +508,13 @@ public class MixedAndIcebergTableDescriptor extends PersistentBase
 
   @Override
   public Pair<List<OptimizingProcessInfo>, Integer> getOptimizingProcessesInfo(
-      AmoroTable<?> amoroTable, String type, ProcessStatus status, int limit, int offset) {
+      AmoroTable<?> amoroTable,
+      String type,
+      ProcessStatus status,
+      int limit,
+      int offset,
+      String beginTime,
+      String endTime) {
     TableIdentifier tableIdentifier = amoroTable.id();
     int total = 0;
     // page helper is 1-based
@@ -524,7 +530,9 @@ public class MixedAndIcebergTableDescriptor extends PersistentBase
                       tableIdentifier.getDatabase(),
                       tableIdentifier.getTableName(),
                       type,
-                      status));
+                      status,
+                      beginTime,
+                      endTime));
       PageInfo<OptimizingProcessMeta> pageInfo = new PageInfo<>(processMetaList);
       total = (int) pageInfo.getTotal();
       LOG.info(
@@ -551,6 +559,29 @@ public class MixedAndIcebergTableDescriptor extends PersistentBase
             .map(p -> buildOptimizingProcessInfo(p, optimizingTasks.get(p.getProcessId())))
             .collect(Collectors.toList()),
         total);
+  }
+
+  @Override
+  public OptimizingProcessInfo getSingleOptimizingProcessInfo(
+      AmoroTable<?> amoroTable, String processId) {
+    TableIdentifier tableIdentifier = amoroTable.id();
+    OptimizingProcessMeta processMeta =
+        getAs(
+            OptimizingMapper.class,
+            mapper ->
+                mapper.selectOptimizingProcessByProcessId(
+                    tableIdentifier.getCatalog(),
+                    tableIdentifier.getDatabase(),
+                    tableIdentifier.getTableName(),
+                    processId));
+    List<Long> list = new ArrayList<>();
+    if (processMeta == null) {
+      return new OptimizingProcessInfo();
+    }
+    list.add(processMeta.getProcessId());
+    List<OptimizingTaskMeta> optimizingTasks =
+        getAs(OptimizingMapper.class, mapper -> mapper.selectOptimizeTaskMetas(list));
+    return buildOptimizingProcessInfo(processMeta, optimizingTasks);
   }
 
   @Override

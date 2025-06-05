@@ -120,6 +120,8 @@ public class BaseOptimizingChecker extends PersistentBase {
                                 tableIdentifier.getDatabase(),
                                 tableIdentifier.getTableName(),
                                 null,
+                                null,
+                                null,
                                 null));
                 if (tableOptimizingProcesses == null || tableOptimizingProcesses.isEmpty()) {
                   LOG.info("optimize history is empty");
@@ -159,6 +161,8 @@ public class BaseOptimizingChecker extends PersistentBase {
                           tableIdentifier.getDatabase(),
                           tableIdentifier.getTableName(),
                           null,
+                          null,
+                          null,
                           null))
               .stream()
               .filter(p -> p.getProcessId() > lastProcessId)
@@ -189,6 +193,8 @@ public class BaseOptimizingChecker extends PersistentBase {
                         tableIdentifier.getCatalog(),
                         tableIdentifier.getDatabase(),
                         tableIdentifier.getTableName(),
+                        null,
+                        null,
                         null,
                         null))
             .stream()

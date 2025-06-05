@@ -63,7 +63,16 @@ public interface FormatTableDescriptor {
 
   /** Get the paged optimizing process information of the {@link AmoroTable} and total size. */
   Pair<List<OptimizingProcessInfo>, Integer> getOptimizingProcessesInfo(
-      AmoroTable<?> amoroTable, String type, ProcessStatus status, int limit, int offset);
+      AmoroTable<?> amoroTable,
+      String type,
+      ProcessStatus status,
+      int limit,
+      int offset,
+      String beginTime,
+      String endTime);
+
+  /** Get the single optimizing process information of the {@link AmoroTable}. */
+  OptimizingProcessInfo getSingleOptimizingProcessInfo(AmoroTable<?> amoroTable, String processId);
 
   /** Return the optimizing types of the {@link AmoroTable} is supported. */
   Map<String, String> getTableOptimizingTypes(AmoroTable<?> amoroTable);

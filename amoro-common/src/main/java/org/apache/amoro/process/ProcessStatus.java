@@ -22,9 +22,14 @@ package org.apache.amoro.process;
 public enum ProcessStatus {
   UNKNOWN,
   PENDING,
-  RUNNING,
   SUBMITTED,
+  RUNNING,
   SUCCESS,
   CLOSED,
-  FAILED
+  KILLED,
+  FAILED;
+
+  public ProcessStage toStage() {
+    return new ProcessStage(name(), ordinal());
+  }
 }

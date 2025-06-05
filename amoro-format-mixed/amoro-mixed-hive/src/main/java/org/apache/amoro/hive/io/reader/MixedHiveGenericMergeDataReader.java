@@ -51,7 +51,8 @@ public class MixedHiveGenericMergeDataReader extends AbstractMixedHiveMergeDataR
       BiFunction<Type, Object, Object> convertConstant,
       boolean reuseContainer,
       StructLikeCollections structLikeCollections,
-      boolean reuseChangeDataCache) {
+      boolean reuseChangeDataCache,
+      Map<String, String> properties) {
     super(
         fileIO,
         tableSchema,
@@ -62,7 +63,8 @@ public class MixedHiveGenericMergeDataReader extends AbstractMixedHiveMergeDataR
         convertConstant,
         reuseContainer,
         structLikeCollections,
-        reuseChangeDataCache);
+        reuseChangeDataCache,
+        properties);
   }
 
   @Override
@@ -88,7 +90,7 @@ public class MixedHiveGenericMergeDataReader extends AbstractMixedHiveMergeDataR
 
   @Override
   protected MergeFunction<Record> mergeFunction() {
-    return GenericMergeDataReader.PartialUpdateMergeFunction.getInstance();
+    return new GenericMergeDataReader.GenericMergeFunction(struct, primaryKeySpec, properties);
   }
 
   @Override

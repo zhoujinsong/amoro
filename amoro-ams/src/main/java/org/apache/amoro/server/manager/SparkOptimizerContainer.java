@@ -20,6 +20,7 @@ package org.apache.amoro.server.manager;
 
 import org.apache.amoro.OptimizerProperties;
 import org.apache.amoro.resource.Resource;
+import org.apache.amoro.server.utils.SparkConfUtil;
 import org.apache.amoro.shade.guava32.com.google.common.base.Function;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
@@ -40,7 +41,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-public class SparkOptimizerContainer extends AbstractResourceContainer {
+public class SparkOptimizerContainer extends AbstractOptimizerContainer {
   private static final Logger LOG = LoggerFactory.getLogger(SparkOptimizerContainer.class);
 
   public static final String SPARK_HOME_PROPERTY = "spark-home";
@@ -91,8 +92,8 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
       jobUri = amsHome + DEFAULT_JOB_URI;
     }
     this.jobUri = jobUri;
-    SparkOptimizerContainer.SparkConf sparkConf =
-        SparkOptimizerContainer.SparkConf.buildFor(loadSparkConfig(), containerProperties).build();
+    SparkConfUtil sparkConf =
+        SparkConfUtil.buildFor(loadSparkConfig(), containerProperties).build();
     if (deployedOnKubernetes()) {
       String imageRef =
           sparkConf.configValue(SparkOptimizerContainer.SparkConfKeys.KUBERNETES_IMAGE_REF);
@@ -115,8 +116,9 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
       Process exec = Runtime.getRuntime().exec(cmd);
       Map<String, String> startUpStatesMap = Maps.newHashMap();
       if (deployedOnKubernetes()) {
-        SparkOptimizerContainer.SparkConf sparkConf =
-            SparkOptimizerContainer.SparkConf.buildFor(loadSparkConfig(), getContainerProperties())
+        SparkConfUtil sparkConf =
+            SparkConfUtil.buildFor(loadSparkConfig(), getContainerProperties())
+                .withGroupProperties(resource.getProperties())
                 .build();
         String namespace =
             StringUtils.defaultIfEmpty(
@@ -139,8 +141,8 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
   @Override
   protected String buildOptimizerStartupArgsString(Resource resource) {
     Map<String, String> sparkConfig = loadSparkConfig();
-    SparkOptimizerContainer.SparkConf resourceSparkConf =
-        SparkOptimizerContainer.SparkConf.buildFor(sparkConfig, getContainerProperties())
+    SparkConfUtil resourceSparkConf =
+        SparkConfUtil.buildFor(sparkConfig, getContainerProperties())
             .withGroupProperties(resource.getProperties())
             .build();
 
@@ -196,8 +198,7 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
     return sparkMaster.startsWith("k8s://");
   }
 
-  private void addKubernetesProperties(
-      Resource resource, SparkOptimizerContainer.SparkConf sparkConf) {
+  private void addKubernetesProperties(Resource resource, SparkConfUtil sparkConf) {
     String driverName = kubernetesDriverName(resource);
     sparkConf.putToOptions(
         SparkOptimizerContainer.SparkConfKeys.KUBERNETES_DRIVER_NAME, driverName);
@@ -246,7 +247,7 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
   }
 
   @Override
-  public void releaseOptimizer(Resource resource) {
+  public void releaseResource(Resource resource) {
     String releaseCommand;
     if (deployedOnKubernetes()) {
       releaseCommand = buildReleaseKubernetesCommand(resource);
@@ -280,8 +281,8 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
         resource.getProperties().containsKey(KUBERNETES_SUBMISSION_ID_PROPERTY),
         "Cannot find {} from optimizer start up stats.",
         KUBERNETES_SUBMISSION_ID_PROPERTY);
-    SparkOptimizerContainer.SparkConf resourceSparkConf =
-        SparkOptimizerContainer.SparkConf.buildFor(sparkConfig, getContainerProperties())
+    SparkConfUtil resourceSparkConf =
+        SparkConfUtil.buildFor(sparkConfig, getContainerProperties())
             .withGroupProperties(resource.getProperties())
             .build();
     String sparkOptions = resourceSparkConf.toConfOptions();
@@ -333,85 +334,5 @@ public class SparkOptimizerContainer extends AbstractResourceContainer {
     public static final String KUBERNETES_DRA_ENABLED = "spark.dynamicAllocation.enabled";
     public static final String KUBERNETES_DRA_MAX_EXECUTORS =
         "spark.dynamicAllocation.maxExecutors";
-  }
-
-  public static class SparkConf {
-    public static final String SPARK_PARAMETER_PREFIX = "spark-conf.";
-
-    final Map<String, String> sparkConf;
-    final Map<String, String> sparkOptions;
-
-    public SparkConf(Map<String, String> sparkConf, Map<String, String> sparkOptions) {
-      this.sparkConf = sparkConf;
-      this.sparkOptions = sparkOptions;
-    }
-
-    public String configValue(String key) {
-      if (sparkOptions.containsKey(key)) {
-        return sparkOptions.get(key);
-      }
-      return sparkConf.get(key);
-    }
-
-    public void putToOptions(String key, String value) {
-      this.sparkOptions.put(key, value);
-    }
-
-    /**
-     * The properties with prefix "spark-conf." will be merged with the following priority and
-     * transformed into Spark options. 1. optimizing-group properties 2. optimizing-container
-     * properties
-     *
-     * @return spark options, format is `--conf key1=value1 --conf key2=value2`
-     */
-    public String toConfOptions() {
-      return sparkOptions.entrySet().stream()
-          .map(entry -> "--conf " + entry.getKey() + "=" + entry.getValue())
-          .collect(Collectors.joining(" "));
-    }
-
-    public static SparkOptimizerContainer.SparkConf.Builder buildFor(
-        Map<String, String> sparkConf, Map<String, String> containerProperties) {
-      return new SparkOptimizerContainer.SparkConf.Builder(sparkConf, containerProperties);
-    }
-
-    public static class Builder {
-      final Map<String, String> sparkConf;
-      Map<String, String> containerProperties;
-      Map<String, String> groupProperties = Collections.emptyMap();
-
-      public Builder(Map<String, String> sparkConf, Map<String, String> containerProperties) {
-        this.sparkConf = Maps.newHashMap(sparkConf);
-        this.containerProperties =
-            containerProperties == null ? Collections.emptyMap() : containerProperties;
-      }
-
-      public SparkOptimizerContainer.SparkConf.Builder withGroupProperties(
-          Map<String, String> groupProperties) {
-        this.groupProperties = groupProperties;
-        return this;
-      }
-
-      public SparkOptimizerContainer.SparkConf build() {
-        Map<String, String> options = Maps.newHashMap();
-        this.containerProperties.entrySet().stream()
-            .filter(entry -> entry.getKey().startsWith(SPARK_PARAMETER_PREFIX))
-            .forEach(
-                entry ->
-                    options.put(
-                        entry.getKey().substring(SPARK_PARAMETER_PREFIX.length()),
-                        entry.getValue()));
-
-        this.groupProperties.entrySet().stream()
-            .filter(entry -> entry.getKey().startsWith(SPARK_PARAMETER_PREFIX))
-            .forEach(
-                entry ->
-                    options.put(
-                        entry.getKey().substring(SPARK_PARAMETER_PREFIX.length()),
-                        entry.getValue()));
-
-        return new SparkOptimizerContainer.SparkConf(this.sparkConf, options);
-      }
-    }
   }
 }

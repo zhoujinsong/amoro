@@ -22,7 +22,7 @@ import org.apache.amoro.hive.io.reader.AbstractMixedHiveMergeDataReader;
 import org.apache.amoro.io.AuthenticatedFileIO;
 import org.apache.amoro.io.reader.MergeFunction;
 import org.apache.amoro.spark.SparkInternalRowWrapper;
-import org.apache.amoro.spark.mixed.PartialUpdateMergeFunction;
+import org.apache.amoro.spark.mixed.SparkMergeFunction;
 import org.apache.amoro.spark.util.MixedFormatSparkUtils;
 import org.apache.amoro.table.PrimaryKeySpec;
 import org.apache.iceberg.Schema;
@@ -47,7 +47,8 @@ public class SparkMergeDataReader extends AbstractMixedHiveMergeDataReader<Inter
       Schema projectedSchema,
       PrimaryKeySpec primaryKeySpec,
       String nameMapping,
-      boolean caseSensitive) {
+      boolean caseSensitive,
+      Map<String, String> properties) {
     super(
         fileIO,
         tableSchema,
@@ -58,7 +59,8 @@ public class SparkMergeDataReader extends AbstractMixedHiveMergeDataReader<Inter
         MixedFormatSparkUtils::convertConstant,
         true,
         null,
-        false);
+        false,
+        properties);
   }
 
   @Override
@@ -84,7 +86,7 @@ public class SparkMergeDataReader extends AbstractMixedHiveMergeDataReader<Inter
 
   @Override
   protected MergeFunction<InternalRow> mergeFunction() {
-    return PartialUpdateMergeFunction.getInstance();
+    return new SparkMergeFunction(projectedSchema.asStruct(), primaryKeySpec, properties);
   }
 
   @Override
