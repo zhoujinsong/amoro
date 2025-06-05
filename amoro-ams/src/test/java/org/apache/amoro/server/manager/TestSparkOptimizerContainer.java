@@ -19,6 +19,7 @@
 package org.apache.amoro.server.manager;
 
 import org.apache.amoro.OptimizerProperties;
+import org.apache.amoro.server.utils.SparkConfUtil;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.junit.Assert;
 import org.junit.Test;
@@ -47,8 +48,8 @@ public class TestSparkOptimizerContainer {
     groupProperties.put("spark-conf.key2", "value4");
     groupProperties.put("spark-conf.key5", "value5");
 
-    SparkOptimizerContainer.SparkConf conf =
-        SparkOptimizerContainer.SparkConf.buildFor(Maps.newHashMap(), containerProperties)
+    SparkConfUtil conf =
+        SparkConfUtil.buildFor(Maps.newHashMap(), containerProperties)
             .withGroupProperties(groupProperties)
             .build();
     String sparkOptions = conf.toConfOptions();

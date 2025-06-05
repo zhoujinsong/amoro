@@ -369,7 +369,13 @@ public class PaimonTableDescriptor implements FormatTableDescriptor {
 
   @Override
   public Pair<List<OptimizingProcessInfo>, Integer> getOptimizingProcessesInfo(
-      AmoroTable<?> amoroTable, String type, ProcessStatus status, int limit, int offset) {
+      AmoroTable<?> amoroTable,
+      String type,
+      ProcessStatus status,
+      int limit,
+      int offset,
+      String beginTime,
+      String endTime) {
     // Temporary solution for Paimon. TODO: Get compaction info from Paimon compaction task
     List<OptimizingProcessInfo> processInfoList = new ArrayList<>();
     TableIdentifier tableIdentifier = amoroTable.id();
@@ -453,6 +459,12 @@ public class PaimonTableDescriptor implements FormatTableDescriptor {
     processInfoList =
         processInfoList.stream().skip(offset).limit(limit).collect(Collectors.toList());
     return Pair.of(processInfoList, total);
+  }
+
+  @Override
+  public OptimizingProcessInfo getSingleOptimizingProcessInfo(
+      AmoroTable<?> amoroTable, String processId) {
+    return null;
   }
 
   @Override

@@ -19,20 +19,30 @@
 package org.apache.amoro.utils;
 
 import org.apache.amoro.TableFormat;
+import org.apache.amoro.io.reader.FieldMergeOperators;
 import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTesting;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
 import org.apache.amoro.table.KeyedTable;
 import org.apache.amoro.table.MixedTable;
+import org.apache.amoro.table.PrimaryKeySpec;
 import org.apache.amoro.table.TableProperties;
 import org.apache.amoro.table.UnkeyedTable;
+import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.StatisticsFile;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.types.Types;
+import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.StructLikeMap;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public class MixedTableUtil {
   public static final String BLOB_TYPE_OPTIMIZED_SEQUENCE = "optimized-sequence";
@@ -202,15 +212,68 @@ public class MixedTableUtil {
     return tableName + separator + MixedTable.CHANGE_STORE_IDENTIFIER + separator;
   }
 
-  /**
-   * Determine if it is a change store of a mixed format table by the table name.
-   *
-   * @param tableName table name.
-   * @param separator change store separator.
-   * @return if it is a change store.
-   */
-  public static boolean isChangeStore(String tableName, String separator) {
-    return tableName != null
-        && tableName.endsWith(separator + MixedTable.CHANGE_STORE_IDENTIFIER + separator);
+  public static boolean isMergeDataFunction(MixedTable mixedTable) {
+    if (mixedTable.isKeyedTable()) {
+      String mergeFunction =
+          PropertyUtil.propertyAsString(
+              mixedTable.properties(),
+              org.apache.amoro.table.TableProperties.MERGE_FUNCTION,
+              TableProperties.MERGE_FUNCTION_DEFAULT);
+      return TableProperties.MERGE_FUNCTION_PARTIAL_UPDATE.equals(mergeFunction)
+          || TableProperties.MERGE_FUNCTION_AGGREGATION.equals(mergeFunction);
+    }
+    return false;
+  }
+
+  public static void validateTableProperties(
+      Schema schema,
+      PartitionSpec partitionSpec,
+      PrimaryKeySpec primaryKeySpec,
+      Map<String, String> properties) {
+    String mergeFunction =
+        PropertyUtil.propertyAsString(
+            properties,
+            org.apache.amoro.table.TableProperties.MERGE_FUNCTION,
+            TableProperties.MERGE_FUNCTION_DEFAULT);
+    switch (mergeFunction) {
+      case TableProperties.MERGE_FUNCTION_REPLACE:
+      case TableProperties.MERGE_FUNCTION_PARTIAL_UPDATE:
+        break;
+      case TableProperties.MERGE_FUNCTION_AGGREGATION:
+        Set<String> unsupportedFields = Sets.newHashSet(primaryKeySpec.fieldNames());
+        unsupportedFields.addAll(
+            partitionSpec.fields().stream()
+                .map(PartitionField::fieldId)
+                .map(schema::findField)
+                .map(Types.NestedField::name)
+                .collect(Collectors.toSet()));
+        int fieldSize = schema.asStruct().fields().size();
+        for (int i = 0; i < fieldSize; i++) {
+          Types.NestedField field = schema.asStruct().fields().get(i);
+          String fieldAggregationProperty =
+              FieldMergeOperators.fieldAggregationProperty(field.name());
+          if (unsupportedFields.contains(field.name())) {
+            if (properties.containsKey(fieldAggregationProperty)) {
+              throw new IllegalArgumentException(
+                  "Cannot set the aggregation function for primary key fields or partition source fields:"
+                      + field.name());
+            }
+          } else {
+            String aggregationFunction = properties.get(fieldAggregationProperty);
+            if (aggregationFunction != null
+                && !FieldMergeOperators.supportAggregationFunction(
+                    field.type(), aggregationFunction)) {
+              throw new IllegalArgumentException(
+                  "Unsupported aggregation function:"
+                      + aggregationFunction
+                      + " with type:"
+                      + field.type());
+            }
+          }
+        }
+        break;
+      default:
+        throw new IllegalArgumentException("Unsupported merge function:" + mergeFunction);
+    }
   }
 }

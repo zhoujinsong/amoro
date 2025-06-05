@@ -54,12 +54,12 @@ case class AlterMixedFormatTableDropPartitionExec(
       while (i < name.size) {
         val dataType = table.schema().apply(name.apply(i)).dataType
         val data = convertInternalRowDataByType(dataType, row, i)
-        val experssion = EqualNullSafe(
+        val expression = EqualNullSafe(
           AttributeReference(
             name.apply(i),
             dataType)(),
           Literal(data))
-        expressions.add(experssion)
+        expressions.add(expression)
         i += 1
       }
       index += 1
@@ -121,6 +121,7 @@ case class AlterMixedFormatTableDropPartitionExec(
       case ShortType => data.getShort(index)
       case ByteType => data.getByte(index)
       case StringType => data.getString(index)
+      case DateType => data.getInt(index)
       case _ =>
         throw new UnsupportedOperationException("Cannot convert data by this type")
     }

@@ -25,6 +25,7 @@ import org.apache.amoro.shade.guava32.com.google.common.base.Strings;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.hash.Hashing;
 import org.apache.amoro.shade.guava32.com.google.common.io.ByteStreams;
+import org.apache.amoro.utils.LoadLocalConfigurationUtil;
 import org.apache.amoro.utils.ReflectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
@@ -337,6 +338,13 @@ public class TableMetaStore implements Serializable {
     return authInformation();
   }
 
+  private Object readResolve() {
+    if (LoadLocalConfigurationUtil.loadLocalConf()) {
+      return new TableMetaStore(LoadLocalConfigurationUtil.getLocalConfiguration());
+    }
+    return this;
+  }
+
   class RuntimeContext {
     private Configuration configuration;
     private UserGroupInformation ugi;
@@ -527,7 +535,7 @@ public class TableMetaStore implements Serializable {
     }
 
     private Configuration buildConfiguration(TableMetaStore metaStore) {
-      Configuration configuration = new Configuration();
+      Configuration configuration = new Configuration(false);
       if (!ArrayUtils.isEmpty(metaStore.getCoreSite())) {
         configuration.addResource(new ByteArrayInputStream(metaStore.getCoreSite()));
       }

@@ -22,10 +22,12 @@ import org.apache.amoro.spark.mixed.MixedSessionCatalogBase;
 import org.apache.amoro.spark.mixed.MixedSparkCatalogBase;
 import org.apache.spark.sql.catalyst.analysis.NoSuchFunctionException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
+import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.NonEmptyNamespaceException;
 import org.apache.spark.sql.connector.catalog.FunctionCatalog;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.SupportsNamespaces;
+import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.functions.UnboundFunction;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
@@ -61,5 +63,25 @@ public class MixedFormatSparkSessionCatalog<
   public boolean dropNamespace(String[] namespace, boolean cascade)
       throws NoSuchNamespaceException, NonEmptyNamespaceException {
     return getSessionCatalog().dropNamespace(namespace, cascade);
+  }
+
+  @Override
+  public Table loadTable(Identifier ident, long timestamp) throws NoSuchTableException {
+    return getSessionCatalog().loadTable(ident, timestamp);
+  }
+
+  @Override
+  public Table loadTable(Identifier ident, String version) throws NoSuchTableException {
+    return getSessionCatalog().loadTable(ident, version);
+  }
+
+  @Override
+  public void invalidateTable(Identifier ident) {
+    getSessionCatalog().invalidateTable(ident);
+  }
+
+  @Override
+  public boolean tableExists(Identifier ident) {
+    return super.tableExists(ident);
   }
 }

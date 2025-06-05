@@ -121,7 +121,7 @@ public interface FlinkTaskWriterBaseTest extends FlinkTableTestBase {
     WriteResult writerResult = taskWriter.complete();
     boolean writeToBase = mixedTable.isUnkeyedTable();
     commit(mixedTable, writerResult, writeToBase);
-    Assert.assertEquals(upsertEnabled ? 2 : 1, writerResult.dataFiles().length);
+    Assert.assertEquals(1, writerResult.dataFiles().length);
   }
 
   default boolean upsertEnabled() {

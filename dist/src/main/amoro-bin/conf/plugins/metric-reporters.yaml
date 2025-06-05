@@ -19,8 +19,8 @@
 # configurations of metric reporters
 
 metric-reporters:
+
 #  - name: prometheus-exporter            # configs for prometheus exporter
 #    enabled: false
 #    properties:
 #       port: 7001
-

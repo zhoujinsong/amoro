@@ -117,7 +117,8 @@ public class TestRowDataReaderFunction extends TestContinuousSplitPlannerImpl {
           continue;
         }
         MixedFileScanTask mixedFileScanTask = (MixedFileScanTask) fileScanTask;
-        if (mixedFileScanTask.fileType().equals(DataFileType.INSERT_FILE)) {
+        if (mixedFileScanTask.fileType().equals(DataFileType.INSERT_FILE)
+            || mixedFileScanTask.fileType().equals(DataFileType.CHANGE_FILE)) {
           appendLogTasks.add(mixedFileScanTask);
         } else if (mixedFileScanTask.fileType().equals(DataFileType.EQ_DELETE_FILE)) {
           deleteLogTasks.add(mixedFileScanTask);

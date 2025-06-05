@@ -18,6 +18,10 @@
 
 package org.apache.amoro.server.terminal.local;
 
+import static org.apache.amoro.server.terminal.SparkContextUtil.SPARK_CONF_PREFIX;
+import static org.apache.amoro.server.terminal.SparkContextUtil.SPARK_SQL_EXTENSIONS;
+import static org.apache.amoro.server.terminal.SparkContextUtil.SPARK_SQL_EXTENSIONS_CONF;
+
 import org.apache.amoro.config.ConfigOption;
 import org.apache.amoro.config.ConfigOptions;
 import org.apache.amoro.config.Configurations;
@@ -43,12 +47,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class LocalSessionFactory implements TerminalSessionFactory {
-
   static final Set<String> STATIC_SPARK_CONF =
-      Collections.unmodifiableSet(Sets.newHashSet("spark.sql.extensions"));
+      Collections.unmodifiableSet(Sets.newHashSet(SPARK_SQL_EXTENSIONS));
   static final Set<String> EXTERNAL_CONNECTORS =
       Collections.unmodifiableSet(Sets.newHashSet("iceberg", "paimon"));
-  static final String SPARK_CONF_PREFIX = "spark.";
 
   public static ConfigOption<Integer> SPARK_CORES =
       ConfigOptions.key("cores").intType().defaultValue(1);
@@ -84,10 +86,11 @@ public class LocalSessionFactory implements TerminalSessionFactory {
         .forEach(c -> setHadoopConfigToSparkSession(c, session, metaStore));
 
     for (String key : sparkConf.keySet()) {
+      String value = sparkConf.get(key);
       if (STATIC_SPARK_CONF.contains(key)) {
         continue;
       }
-      updateSessionConf(session, initializeLogs, key, sparkConf.get(key));
+      updateSessionConf(session, initializeLogs, key, value);
       finallyConf.put(key, sparkConf.get(key));
     }
 
@@ -137,16 +140,16 @@ public class LocalSessionFactory implements TerminalSessionFactory {
       sparkconf.set("spark.executor.heartbeatInterval", "100s");
       sparkconf.set("spark.network.timeout", "200s");
       sparkconf.set(
-          "spark.sql.extensions",
-          SparkContextUtil.MIXED_FORMAT_EXTENSION
-              + ","
-              + SparkContextUtil.ICEBERG_EXTENSION
-              + ","
-              + SparkContextUtil.PAIMON_EXTENSION);
+          SPARK_SQL_EXTENSIONS,
+          SparkContextUtil.joinExtensions(
+              conf.get(SPARK_SQL_EXTENSIONS_CONF),
+              SparkContextUtil.MIXED_FORMAT_EXTENSION,
+              SparkContextUtil.ICEBERG_EXTENSION,
+              SparkContextUtil.PAIMON_EXTENSION));
       sparkconf.set("spark.cleaner.referenceTracking", "false");
 
       for (String key : this.conf.keySet()) {
-        if (key.startsWith(SPARK_CONF_PREFIX)) {
+        if (key.startsWith(SPARK_CONF_PREFIX) && !key.equals(SPARK_SQL_EXTENSIONS)) {
           String value = this.conf.getValue(ConfigOptions.key(key).stringType().noDefaultValue());
           sparkconf.set(key, value);
         }

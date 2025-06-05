@@ -83,6 +83,9 @@ import org.apache.iceberg.SnapshotRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -321,7 +324,23 @@ public class TableController {
     String db = ctx.pathParam("db");
     String table = ctx.pathParam("table");
     String type = ctx.queryParam("type");
-
+    String beginTime = ctx.queryParam("beginTime");
+    String endTime = ctx.queryParam("endTime");
+    String pattern = "yyyy-MM-dd HH:mm:ss";
+    if (StringUtils.isNotEmpty(beginTime)) {
+      boolean validBeginDateTime = isValidDateTime(beginTime, pattern);
+      Preconditions.checkArgument(
+          validBeginDateTime, "Begin time is not a valid time format:%s", pattern);
+    } else {
+      beginTime = null;
+    }
+    if (StringUtils.isNotEmpty(endTime)) {
+      boolean validEndDateTime = isValidDateTime(endTime, pattern);
+      Preconditions.checkArgument(
+          validEndDateTime, "End time is not a valid time format:%s", pattern);
+    } else {
+      endTime = null;
+    }
     if (StringUtils.isBlank(type)) {
       // treat all blank string to null
       type = null;
@@ -341,11 +360,46 @@ public class TableController {
         StringUtils.isBlank(status) ? null : ProcessStatus.valueOf(status);
     Pair<List<OptimizingProcessInfo>, Integer> optimizingProcessesInfo =
         tableDescriptor.getOptimizingProcessesInfo(
-            tableIdentifier.buildTableIdentifier(), type, processStatus, limit, offset);
+            tableIdentifier.buildTableIdentifier(),
+            type,
+            processStatus,
+            limit,
+            offset,
+            beginTime,
+            endTime);
     List<OptimizingProcessInfo> result = optimizingProcessesInfo.getLeft();
     int total = optimizingProcessesInfo.getRight();
 
     ctx.json(OkResponse.of(PageResult.of(result, total)));
+  }
+
+  public boolean isValidDateTime(String dateTimeStr, String pattern) {
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern);
+    try {
+      LocalDateTime.parse(dateTimeStr, formatter);
+      return true;
+    } catch (DateTimeParseException e) {
+      return false;
+    }
+  }
+
+  /**
+   * get single optimizing process.
+   *
+   * @param ctx - context for handling the request and response
+   */
+  public void getOptimizingProcessByProcessId(Context ctx) {
+
+    String catalog = ctx.pathParam("catalog");
+    String db = ctx.pathParam("db");
+    String table = ctx.pathParam("table");
+
+    String processId = ctx.queryParam("processId");
+    Preconditions.checkArgument(StringUtils.isNotEmpty(processId), "ProcessId should not be empty");
+    TableIdentifier tableIdentifier = TableIdentifier.of(catalog, db, table);
+    OptimizingProcessInfo optimizingProcessInfo =
+        tableDescriptor.getOptimizingProcessInfo(tableIdentifier.buildTableIdentifier(), processId);
+    ctx.json(OkResponse.of(optimizingProcessInfo));
   }
 
   public void getOptimizingTypes(Context ctx) {

@@ -50,6 +50,11 @@ public class SparkInternalRowWrapper implements StructLike {
     return types.length;
   }
 
+  private SparkInternalRowWrapper(SparkInternalRowWrapper wrapper) {
+    this.types = wrapper.types;
+    this.getters = wrapper.getters;
+  }
+
   @Override
   public <T> T get(int pos, Class<T> javaClass) {
     if (row.isNullAt(pos)) {
@@ -69,6 +74,12 @@ public class SparkInternalRowWrapper implements StructLike {
   public SparkInternalRowWrapper wrap(InternalRow internalRow) {
     this.row = internalRow;
     return this;
+  }
+
+  public SparkInternalRowWrapper copyFor(InternalRow internalRow) {
+    SparkInternalRowWrapper copy = new SparkInternalRowWrapper(this);
+    copy.wrap(internalRow);
+    return copy;
   }
 
   private static BiFunction<InternalRow, Integer, ?> getter(DataType type) {

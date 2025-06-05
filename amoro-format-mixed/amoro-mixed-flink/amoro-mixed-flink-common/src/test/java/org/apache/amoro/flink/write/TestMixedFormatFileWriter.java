@@ -246,7 +246,7 @@ public class TestMixedFormatFileWriter extends FlinkTestBase {
 
       testHarness.prepareSnapshotPreBarrier(checkpointId);
       Assert.assertEquals(1, testHarness.extractOutputValues().size());
-      Assert.assertEquals(3, testHarness.extractOutputValues().get(0).dataFiles().length);
+      Assert.assertEquals(2, testHarness.extractOutputValues().get(0).dataFiles().length);
 
       checkpointId = checkpointId + 1;
 
@@ -284,7 +284,7 @@ public class TestMixedFormatFileWriter extends FlinkTestBase {
 
       testHarness.prepareSnapshotPreBarrier(checkpointId);
       Assert.assertEquals(1, testHarness.extractOutputValues().size());
-      Assert.assertEquals(3, testHarness.extractOutputValues().get(0).dataFiles().length);
+      Assert.assertEquals(2, testHarness.extractOutputValues().get(0).dataFiles().length);
 
       checkpointId = checkpointId + 1;
 
@@ -300,7 +300,7 @@ public class TestMixedFormatFileWriter extends FlinkTestBase {
       testHarness.prepareSnapshotPreBarrier(checkpointId);
       // testHarness.extractOutputValues() calculates the cumulative value
       Assert.assertEquals(2, testHarness.extractOutputValues().size());
-      Assert.assertEquals(3, testHarness.extractOutputValues().get(1).dataFiles().length);
+      Assert.assertEquals(2, testHarness.extractOutputValues().get(1).dataFiles().length);
     }
   }
 

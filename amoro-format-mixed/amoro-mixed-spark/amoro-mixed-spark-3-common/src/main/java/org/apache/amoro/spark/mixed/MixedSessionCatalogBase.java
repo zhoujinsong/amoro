@@ -28,6 +28,7 @@ import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
+import java.util.Locale;
 import java.util.Set;
 
 public abstract class MixedSessionCatalogBase<
@@ -43,9 +44,15 @@ public abstract class MixedSessionCatalogBase<
   /** Provider when creating a mixed-hive table in session catalog. */
   public static final String MIXED_HIVE_PROVIDER = "mixed_hive";
 
+  public static final String TC_ICEBERG_PROVIDER = "tc_iceberg";
+
   /** Supported providers */
   public static final Set<String> SUPPORTED_PROVIDERS =
-      ImmutableSet.of(LEGACY_MIXED_FORMAT_PROVIDER, MIXED_ICEBERG_PROVIDER, MIXED_HIVE_PROVIDER);
+      ImmutableSet.of(
+          LEGACY_MIXED_FORMAT_PROVIDER,
+          MIXED_ICEBERG_PROVIDER,
+          MIXED_HIVE_PROVIDER,
+          TC_ICEBERG_PROVIDER);
 
   /**
    * build mixed-format catalog instance.
@@ -72,6 +79,7 @@ public abstract class MixedSessionCatalogBase<
 
   @Override
   protected boolean isManagedProvider(String provider) {
-    return StringUtils.isNotBlank(provider) && SUPPORTED_PROVIDERS.contains(provider);
+    return StringUtils.isNotBlank(provider)
+        && SUPPORTED_PROVIDERS.contains(provider.toLowerCase(Locale.ROOT));
   }
 }

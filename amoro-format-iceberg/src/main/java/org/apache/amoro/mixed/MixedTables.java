@@ -137,6 +137,7 @@ public class MixedTables {
       PartitionSpec partitionSpec,
       PrimaryKeySpec keySpec,
       Map<String, String> properties) {
+    MixedTableUtil.validateTableProperties(schema, partitionSpec, keySpec, properties);
     TableIdentifier baseIdentifier =
         TableIdentifier.of(identifier.getDatabase(), identifier.getTableName());
     TableIdentifier changeIdentifier = generateChangeStoreIdentifier(baseIdentifier);

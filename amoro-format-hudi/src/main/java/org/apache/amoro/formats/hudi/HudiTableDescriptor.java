@@ -332,7 +332,13 @@ public class HudiTableDescriptor implements FormatTableDescriptor {
 
   @Override
   public Pair<List<OptimizingProcessInfo>, Integer> getOptimizingProcessesInfo(
-      AmoroTable<?> amoroTable, String type, ProcessStatus status, int limit, int offset) {
+      AmoroTable<?> amoroTable,
+      String type,
+      ProcessStatus status,
+      int limit,
+      int offset,
+      String beginTime,
+      String endTime) {
     HoodieJavaTable hoodieTable = (HoodieJavaTable) amoroTable.originalTable();
     HoodieDefaultTimeline timeline = new HoodieActiveTimeline(hoodieTable.getMetaClient(), false);
     List<HoodieInstant> instants = timeline.getInstants();
@@ -383,6 +389,12 @@ public class HudiTableDescriptor implements FormatTableDescriptor {
     int total = infos.size();
     infos = infos.stream().skip(offset).limit(limit).collect(Collectors.toList());
     return Pair.of(infos, total);
+  }
+
+  @Override
+  public OptimizingProcessInfo getSingleOptimizingProcessInfo(
+      AmoroTable<?> amoroTable, String processId) {
+    return null;
   }
 
   @Override

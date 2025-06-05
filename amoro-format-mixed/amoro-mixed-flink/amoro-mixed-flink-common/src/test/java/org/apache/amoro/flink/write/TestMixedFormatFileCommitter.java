@@ -110,7 +110,7 @@ public class TestMixedFormatFileCommitter extends FlinkTestBase {
       testHarness.notifyOfCompletedCheckpoint(checkpoint);
     }
 
-    checkChangeFiles(7, 9, table);
+    checkChangeFiles(6, 9, table);
   }
 
   private List<WriteResult> prepareChangeFiles() throws Exception {
@@ -143,7 +143,7 @@ public class TestMixedFormatFileCommitter extends FlinkTestBase {
       testHarness.prepareSnapshotPreBarrier(checkpointId);
       // testHarness.extractOutputValues() compute the sum
       Assert.assertEquals(2, testHarness.extractOutputValues().size());
-      Assert.assertEquals(4, testHarness.extractOutputValues().get(1).dataFiles().length);
+      Assert.assertEquals(3, testHarness.extractOutputValues().get(1).dataFiles().length);
       changeFiles = testHarness.extractOutputValues();
     }
     return changeFiles;

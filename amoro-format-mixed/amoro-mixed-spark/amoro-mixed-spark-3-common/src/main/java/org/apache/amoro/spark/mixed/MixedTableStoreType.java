@@ -21,6 +21,7 @@ package org.apache.amoro.spark.mixed;
 import java.util.Locale;
 
 public enum MixedTableStoreType {
+  BASE,
   CHANGE;
 
   public static MixedTableStoreType from(String name) {
