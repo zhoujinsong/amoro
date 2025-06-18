@@ -18,7 +18,6 @@
 
 package org.apache.amoro.mixed;
 
-import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.table.KeyedTable;
 import org.apache.amoro.table.MixedTable;
 import org.apache.amoro.table.TableBuilder;

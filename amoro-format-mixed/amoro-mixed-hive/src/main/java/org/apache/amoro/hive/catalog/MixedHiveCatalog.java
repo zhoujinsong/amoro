@@ -162,8 +162,7 @@ public class MixedHiveCatalog implements MixedFormatCatalog {
   @Override
   public Map<String, String> loadDatabaseMetadata(String databaseName) {
     try {
-      Database hiveDatabase = hiveClientPool.run(
-          client -> client.getDatabase(databaseName));
+      Database hiveDatabase = hiveClientPool.run(client -> client.getDatabase(databaseName));
       return HiveUtil.collectDatabaseMetadata(hiveDatabase);
     } catch (UnknownDBException | NoSuchObjectException e) {
       throw new NoSuchNamespaceException("Database: " + databaseName + " dose not exists.", e);

@@ -89,9 +89,7 @@ public class IcebergCatalog implements FormatCatalog {
 
   @Override
   public Map<String, String> loadDatabaseMetadata(String database) {
-    return metaStore.doAs(
-        () ->
-            asNamespaceCatalog().loadNamespaceMetadata(Namespace.of(database)));
+    return metaStore.doAs(() -> asNamespaceCatalog().loadNamespaceMetadata(Namespace.of(database)));
   }
 
   @Override

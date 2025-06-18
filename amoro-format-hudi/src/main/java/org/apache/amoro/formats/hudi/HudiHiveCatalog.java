@@ -116,8 +116,7 @@ public class HudiHiveCatalog implements FormatCatalog {
   @Override
   public Map<String, String> loadDatabaseMetadata(String database) {
     try {
-      Database hiveDatabase = hiveClientPool.run(
-          client -> client.getDatabase(database));
+      Database hiveDatabase = hiveClientPool.run(client -> client.getDatabase(database));
       return HiveUtil.collectDatabaseMetadata(hiveDatabase);
     } catch (UnknownDBException | NoSuchObjectException e) {
       throw new NoSuchDatabaseException("Database: " + database + " dose not exists.", e);
