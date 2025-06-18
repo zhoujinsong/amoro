@@ -56,12 +56,14 @@ import org.apache.amoro.table.blocker.BasicTableBlockerManager;
 import org.apache.amoro.table.blocker.TableBlockerManager;
 import org.apache.amoro.utils.CompatiblePropertyUtil;
 import org.apache.amoro.utils.ConvertStructUtil;
+import org.apache.amoro.utils.HiveUtil;
 import org.apache.amoro.utils.MixedFormatCatalogUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
+import org.apache.hadoop.hive.metastore.api.UnknownDBException;
 import org.apache.iceberg.IcebergSchemaUtil;
 import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionSpec;
@@ -72,6 +74,7 @@ import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.Transaction;
 import org.apache.iceberg.Transactions;
+import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
@@ -79,6 +82,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -135,12 +139,15 @@ public class MixedHiveCatalog implements MixedFormatCatalog {
 
   @Override
   public void createDatabase(String databaseName) {
+    createDatabase(databaseName, Collections.emptyMap());
+  }
+
+  @Override
+  public void createDatabase(String databaseName, Map<String, String> metadata) {
     try {
       hiveClientPool.run(
           client -> {
-            Database database = new Database();
-            database.setName(databaseName);
-            client.createDatabase(database);
+            client.createDatabase(HiveUtil.constructHiveDatabase(databaseName, metadata));
             return null;
           });
     } catch (AlreadyExistsException e) {
@@ -149,6 +156,19 @@ public class MixedHiveCatalog implements MixedFormatCatalog {
 
     } catch (TException | InterruptedException e) {
       throw new RuntimeException("Failed to create database:" + databaseName, e);
+    }
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String databaseName) {
+    try {
+      Database hiveDatabase = hiveClientPool.run(
+          client -> client.getDatabase(databaseName));
+      return HiveUtil.collectDatabaseMetadata(hiveDatabase);
+    } catch (UnknownDBException | NoSuchObjectException e) {
+      throw new NoSuchNamespaceException("Database: " + databaseName + " dose not exists.", e);
+    } catch (TException | InterruptedException e) {
+      throw new RuntimeException("Failed to drop database from HMS", e);
     }
   }
 

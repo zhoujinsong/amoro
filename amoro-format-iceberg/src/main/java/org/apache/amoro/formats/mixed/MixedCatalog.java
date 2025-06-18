@@ -28,6 +28,7 @@ import org.apache.amoro.table.TableIdentifier;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class MixedCatalog implements FormatCatalog {
@@ -57,6 +58,16 @@ public class MixedCatalog implements FormatCatalog {
   @Override
   public void createDatabase(String database) {
     catalog.createDatabase(database);
+  }
+
+  @Override
+  public void createDatabase(String database, Map<String, String> metadata) {
+    catalog.createDatabase(database, metadata);
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String database) {
+    return null;
   }
 
   @Override

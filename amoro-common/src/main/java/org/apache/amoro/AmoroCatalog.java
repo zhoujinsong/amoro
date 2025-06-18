@@ -19,6 +19,7 @@
 package org.apache.amoro;
 
 import java.util.List;
+import java.util.Map;
 
 /** Base Catalog interface for Amoro. */
 public interface AmoroCatalog {
@@ -48,12 +49,30 @@ public interface AmoroCatalog {
   boolean tableExists(String database, String table);
 
   /**
-   * create database catalog.
+   * create database.
    *
    * @param database database name
    * @throws AlreadyExistsException when database already exists.
    */
   void createDatabase(String database);
+
+  /**
+   * create database with metadata.
+   *
+   * @param database database name
+   * @param metadata database metadata
+   * @throws AlreadyExistsException when database already exists.
+   */
+  void createDatabase(String database, Map<String, String> metadata);
+
+  /**
+   * Load metadata properties for a database.
+   *
+   * @param database database name
+   * @return a string map of properties for the given database
+   * @throws NoSuchDatabaseException when database not exists.
+   */
+  Map<String, String> loadDatabaseMetadata(String database);
 
   /**
    * drop database from catalog.

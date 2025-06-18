@@ -18,6 +18,7 @@
 
 package org.apache.amoro.mixed;
 
+import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.table.KeyedTable;
 import org.apache.amoro.table.MixedTable;
 import org.apache.amoro.table.TableBuilder;
@@ -68,6 +69,25 @@ public interface MixedFormatCatalog {
    * @throws NoSuchNamespaceException
    */
   void createDatabase(String databaseName);
+
+  /**
+   * create database with metadata.
+   *
+   * @param databaseName database name
+   * @param metadata database metadata
+   * @throws AlreadyExistsException when database already exist.
+   * @throws NoSuchNamespaceException
+   */
+  void createDatabase(String databaseName, Map<String, String> metadata);
+
+  /**
+   * Load metadata properties for a database.
+   *
+   * @param databaseName database name
+   * @return a string map of properties for the given database
+   * @throws NoSuchNamespaceException when database not exists.
+   */
+  Map<String, String> loadDatabaseMetadata(String databaseName);
 
   /**
    * drop database from catalog.

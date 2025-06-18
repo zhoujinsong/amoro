@@ -28,7 +28,9 @@ import org.apache.amoro.table.TableIdentifier;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.catalog.Identifier;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 public class PaimonCatalog implements FormatCatalog {
 
@@ -58,10 +60,24 @@ public class PaimonCatalog implements FormatCatalog {
 
   @Override
   public void createDatabase(String database) {
+    createDatabase(database, Collections.emptyMap());
+  }
+
+  @Override
+  public void createDatabase(String database, Map<String, String> metadata) {
     try {
-      catalog.createDatabase(database, false);
+      catalog.createDatabase(database, false, metadata);
     } catch (Catalog.DatabaseAlreadyExistException e) {
       throw new AlreadyExistsException(e);
+    }
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String database) {
+    try {
+      return catalog.loadDatabaseProperties(database);
+    } catch (Catalog.DatabaseNotExistException e) {
+      throw new NoSuchDatabaseException(e);
     }
   }
 

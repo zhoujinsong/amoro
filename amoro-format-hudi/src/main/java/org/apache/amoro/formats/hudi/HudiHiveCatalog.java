@@ -27,12 +27,14 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
+import org.apache.amoro.utils.HiveUtil;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.metastore.api.UnknownDBException;
 import org.apache.hudi.client.common.HoodieJavaEngineContext;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.fs.FSUtils;
@@ -93,18 +95,34 @@ public class HudiHiveCatalog implements FormatCatalog {
 
   @Override
   public void createDatabase(String database) {
+    createDatabase(database, Collections.emptyMap());
+  }
+
+  @Override
+  public void createDatabase(String database, Map<String, String> metadata) {
     try {
-      Database hiveDatabase = new Database();
-      hiveDatabase.setName(database);
       hiveClientPool.run(
           client -> {
-            client.createDatabase(hiveDatabase);
+            client.createDatabase(HiveUtil.constructHiveDatabase(database, metadata));
             return null;
           });
     } catch (AlreadyExistsException e) {
       throw new org.apache.amoro.AlreadyExistsException("Database:" + database + " already exists");
     } catch (TException | InterruptedException e) {
       throw new RuntimeException("Failed to create database from HMS", e);
+    }
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String database) {
+    try {
+      Database hiveDatabase = hiveClientPool.run(
+          client -> client.getDatabase(database));
+      return HiveUtil.collectDatabaseMetadata(hiveDatabase);
+    } catch (UnknownDBException | NoSuchObjectException e) {
+      throw new NoSuchDatabaseException("Database: " + database + " dose not exists.", e);
+    } catch (TException | InterruptedException e) {
+      throw new RuntimeException("Failed to drop database from HMS", e);
     }
   }
 

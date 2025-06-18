@@ -98,6 +98,16 @@ public class MixedFormatCatalogSupportTableSuffix implements MixedFormatCatalog 
   }
 
   @Override
+  public void createDatabase(String databaseName, Map<String, String> metadata) {
+    mixedFormatCatalog.createDatabase(databaseName, metadata);
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String databaseName) {
+    return mixedFormatCatalog.loadDatabaseMetadata(databaseName);
+  }
+
+  @Override
   public void dropDatabase(String databaseName) {
     mixedFormatCatalog.dropDatabase(databaseName);
   }

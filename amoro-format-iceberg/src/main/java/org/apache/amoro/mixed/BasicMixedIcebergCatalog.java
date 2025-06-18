@@ -123,6 +123,16 @@ public class BasicMixedIcebergCatalog implements MixedFormatCatalog {
   }
 
   @Override
+  public void createDatabase(String databaseName, Map<String, String> metadata) {
+    asNamespaceCatalog().createNamespace(Namespace.of(databaseName), metadata);
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String databaseName) {
+    return asNamespaceCatalog().loadNamespaceMetadata(Namespace.of(databaseName));
+  }
+
+  @Override
   public void dropDatabase(String databaseName) {
     asNamespaceCatalog().dropNamespace(Namespace.of(databaseName));
   }

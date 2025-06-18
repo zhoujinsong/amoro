@@ -63,8 +63,8 @@ public class HudiHadoopCatalog implements FormatCatalog {
         this.properties.containsKey(CatalogMetaProperties.KEY_WAREHOUSE),
         "Lack required property: {}",
         CatalogMetaProperties.KEY_WAREHOUSE);
-    String warehosue = this.properties.get(CatalogMetaProperties.KEY_WAREHOUSE);
-    this.warehouse = new Path(warehosue);
+    String warehouse = this.properties.get(CatalogMetaProperties.KEY_WAREHOUSE);
+    this.warehouse = new Path(warehouse);
   }
 
   @Override
@@ -114,6 +114,20 @@ public class HudiHadoopCatalog implements FormatCatalog {
           fs.mkdirs(new Path(warehouse, database));
           return null;
         });
+  }
+
+  @Override
+  public void createDatabase(String database, Map<String, String> metadata) {
+    if (!metadata.isEmpty()) {
+      throw new UnsupportedOperationException(
+          "Cannot create namespace " + database + ": metadata is not supported");
+    }
+    createDatabase(database);
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String database) {
+    return Collections.emptyMap();
   }
 
   @Override

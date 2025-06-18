@@ -135,6 +135,16 @@ public class BasicMixedCatalog implements MixedFormatCatalog {
   }
 
   @Override
+  public void createDatabase(String databaseName, Map<String, String> metadata) {
+    throw new UnsupportedOperationException("Do not support creating database with metadata");
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String databaseName) {
+    throw new UnsupportedOperationException("Do not support loading database metadata");
+  }
+
+  @Override
   public void dropDatabase(String databaseName) {
     try {
       getClient().dropDatabase(name(), databaseName);

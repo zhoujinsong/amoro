@@ -106,6 +106,16 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   }
 
   @Override
+  public void createDatabase(String database, Map<String, String> metadata) {
+    findFirstFormatCatalog(TableFormat.values()).createDatabase(database, metadata);
+  }
+
+  @Override
+  public Map<String, String> loadDatabaseMetadata(String database) {
+    return findFirstFormatCatalog(TableFormat.values()).loadDatabaseMetadata(database);
+  }
+
+  @Override
   public void dropDatabase(String database) {
     if (!listTables(database).isEmpty()) {
       throw new IllegalStateException("Database: " + database + " is not empty.");
