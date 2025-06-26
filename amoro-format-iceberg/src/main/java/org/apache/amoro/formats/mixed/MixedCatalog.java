@@ -67,7 +67,7 @@ public class MixedCatalog implements FormatCatalog {
 
   @Override
   public Map<String, String> loadDatabaseMetadata(String database) {
-    return null;
+    return catalog.loadDatabaseMetadata(database);
   }
 
   @Override
