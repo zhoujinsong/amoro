@@ -1482,5 +1482,21 @@
                 <java.target.version>11</java.target.version>
             </properties>
         </profile>
+
+        <profile>
+            <id>tclake</id>
+            <distributionManagement>
+                <repository>
+                    <id>dlc</id>
+                    <url>https://mirrors.tencent.com/repository/maven/tclake</url>
+                    <uniqueVersion>false</uniqueVersion>
+                </repository>
+                <snapshotRepository>
+                    <id>dlc-snapshot</id>
+                    <url>https://mirrors.tencent.com/repository/maven/tclake-snapshot</url>
+                    <uniqueVersion>false</uniqueVersion>
+                </snapshotRepository>
+            </distributionManagement>
+        </profile>
     </profiles>
 </project>
