@@ -116,7 +116,7 @@ Amoro contains modules as below:
 
 ## Building
 
-Amoro is built using Maven with JDK 8 and JDK 17(only for `amoro-format-mixed/amoro-mixed-trino` module).
+Amoro is built using Maven with JDK 8, 11 and 17(required for `amoro-format-mixed/amoro-mixed-trino` module).
 
 * Build all modules without `amoro-mixed-trino`: `mvn clean package`
 * Build and skip tests: `mvn clean package -DskipTests`
@@ -151,7 +151,7 @@ Amoro is built using Maven with JDK 8 and JDK 17(only for `amoro-format-mixed/am
 
 ## Quickstart
 
-Visit [https://amoro.apache.org/quick-demo/](https://amoro.apache.org/quick-demo/) to quickly
+Visit [https://amoro.apache.org/quick-start/](https://amoro.apache.org/quick-start/) to quickly
 explore what amoro can do.
 
 ## Join Community
