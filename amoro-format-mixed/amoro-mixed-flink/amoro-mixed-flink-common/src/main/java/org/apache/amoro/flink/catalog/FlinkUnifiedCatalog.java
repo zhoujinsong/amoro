@@ -98,6 +98,19 @@ public class FlinkUnifiedCatalog extends AbstractCatalog {
     this.hadoopConf = hadoopConf;
   }
 
+  public FlinkUnifiedCatalog(
+      String defaultDatabase,
+      UnifiedCatalog unifiedCatalog,
+      CatalogFactory.Context context,
+      org.apache.hadoop.conf.Configuration hadoopConf) {
+    super(context.getName(), defaultDatabase);
+    this.unifiedCatalog = unifiedCatalog;
+    this.context = context;
+    this.hadoopConf = hadoopConf;
+    this.amsUri = "";
+    this.amoroCatalogName = "";
+  }
+
   @Override
   public void open() throws CatalogException {
     availableCatalogs = Maps.newHashMap();
