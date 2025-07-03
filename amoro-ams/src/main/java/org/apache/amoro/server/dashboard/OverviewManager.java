@@ -146,7 +146,6 @@ public class OverviewManager extends PersistentBase {
     try {
       refreshTableCache(start);
       refreshResourceUsage(start);
-
     } catch (Exception e) {
       LOG.error("Refreshed overview cache failed", e);
     } finally {

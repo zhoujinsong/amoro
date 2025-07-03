@@ -85,7 +85,7 @@ public class PaimonCatalog implements FormatCatalog {
   @Override
   public Map<String, String> loadDatabaseMetadata(String database) {
     try {
-      return catalog.loadDatabaseProperties(database);
+      return catalog.getDatabase(database).options();
     } catch (Catalog.DatabaseNotExistException e) {
       throw new NoSuchDatabaseException(e);
     }

@@ -56,7 +56,7 @@ public class InternalMixedIcebergCatalog extends BasicMixedIcebergCatalog {
         CatalogProperties.URI);
 
     properties = Maps.newHashMap(properties);
-    properties.put(CatalogProperties.WAREHOUSE_LOCATION, name);
+    properties.putIfAbsent(CatalogProperties.WAREHOUSE_LOCATION, name);
 
     // add table-filter to http header.
     // list table only return mixed-iceberg table.

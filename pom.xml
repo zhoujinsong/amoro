@@ -1487,12 +1487,12 @@
             <id>tclake</id>
             <distributionManagement>
                 <repository>
-                    <id>dlc</id>
+                    <id>tclake</id>
                     <url>https://mirrors.tencent.com/repository/maven/tclake</url>
                     <uniqueVersion>false</uniqueVersion>
                 </repository>
                 <snapshotRepository>
-                    <id>dlc-snapshot</id>
+                    <id>tclake-snapshot</id>
                     <url>https://mirrors.tencent.com/repository/maven/tclake-snapshot</url>
                     <uniqueVersion>false</uniqueVersion>
                 </snapshotRepository>
