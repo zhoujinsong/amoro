@@ -20,13 +20,19 @@ package org.apache.amoro.server.dashboard.model;
 
 import org.apache.amoro.shade.guava32.com.google.common.base.MoreObjects;
 
-public class OverviewSummary {
+import java.util.Collection;
 
+public class OverviewSummary {
   private int catalogCnt;
   private int tableCnt;
   private long tableTotalSize;
   private int totalCpu;
   private long totalMemory;
+  private long optimizingProcessCount;
+  private long optimizingInputFileCount;
+  private long optimizingInputDataSize;
+  private long optimizingOutputFileCount;
+  private long optimizingOutputDataSize;
 
   public OverviewSummary() {}
 
@@ -37,6 +43,69 @@ public class OverviewSummary {
     this.tableTotalSize = tableTotalSize;
     this.totalCpu = totalCpu;
     this.totalMemory = totalMemory;
+  }
+
+  public OverviewSummary(
+      int catalogCnt,
+      int tableCnt,
+      long tableTotalSize,
+      int totalCpu,
+      long totalMemory,
+      long optimizingProcessCount,
+      long optimizingInputFileCount,
+      long optimizingInputDataSize,
+      long optimizingOutputFileCount,
+      long optimizingOutputDataSize) {
+    this.catalogCnt = catalogCnt;
+    this.tableCnt = tableCnt;
+    this.tableTotalSize = tableTotalSize;
+    this.totalCpu = totalCpu;
+    this.totalMemory = totalMemory;
+    this.optimizingProcessCount = optimizingProcessCount;
+    this.optimizingInputFileCount = optimizingInputFileCount;
+    this.optimizingInputDataSize = optimizingInputDataSize;
+    this.optimizingOutputFileCount = optimizingOutputFileCount;
+    this.optimizingOutputDataSize = optimizingOutputDataSize;
+  }
+
+  public long getOptimizingProcessCount() {
+    return optimizingProcessCount;
+  }
+
+  public void setOptimizingProcessCount(long optimizingProcessCount) {
+    this.optimizingProcessCount = optimizingProcessCount;
+  }
+
+  public long getOptimizingInputFileCount() {
+    return optimizingInputFileCount;
+  }
+
+  public void setOptimizingInputFileCount(long optimizingInputFileCount) {
+    this.optimizingInputFileCount = optimizingInputFileCount;
+  }
+
+  public long getOptimizingInputDataSize() {
+    return optimizingInputDataSize;
+  }
+
+  public void setOptimizingInputDataSize(long optimizingInputDataSize) {
+    this.optimizingInputDataSize = optimizingInputDataSize;
+  }
+
+  public long getOptimizingOutputFileCount() {
+    return optimizingOutputFileCount;
+  }
+
+  public void setOptimizingOutputFileCount(long optimizingOutputFileCount) {
+    this.optimizingOutputFileCount = optimizingOutputFileCount;
+  }
+
+  public long getOptimizingOutputDataSize() {
+    return optimizingOutputDataSize;
+  }
+
+  public void setOptimizingOutputDataSize(long optimizingOutputDataSize) {
+    this.optimizingOutputDataSize = optimizingOutputDataSize;
   }
 
   public int getCatalogCnt() {
@@ -79,6 +148,23 @@ public class OverviewSummary {
     this.totalMemory = totalMemory;
   }
 
+  public static OverviewSummary aggregate(Collection<OverviewSummary> overviewSummaries) {
+    OverviewSummary aggregateSummary = new OverviewSummary();
+    for (OverviewSummary overviewSummary : overviewSummaries) {
+      aggregateSummary.catalogCnt += overviewSummary.catalogCnt;
+      aggregateSummary.tableCnt += overviewSummary.tableCnt;
+      aggregateSummary.tableTotalSize += overviewSummary.tableTotalSize;
+      aggregateSummary.totalCpu += overviewSummary.totalCpu;
+      aggregateSummary.totalMemory += overviewSummary.totalMemory;
+      aggregateSummary.optimizingProcessCount += overviewSummary.optimizingProcessCount;
+      aggregateSummary.optimizingInputFileCount += overviewSummary.optimizingInputFileCount;
+      aggregateSummary.optimizingInputDataSize += overviewSummary.optimizingInputDataSize;
+      aggregateSummary.optimizingOutputFileCount += overviewSummary.optimizingOutputFileCount;
+      aggregateSummary.optimizingOutputDataSize += overviewSummary.optimizingOutputDataSize;
+    }
+    return aggregateSummary;
+  }
+
   @Override
   public String toString() {
     return MoreObjects.toStringHelper(this)
@@ -87,6 +173,11 @@ public class OverviewSummary {
         .add("tableTotalSize", tableTotalSize)
         .add("totalCpu", totalCpu)
         .add("totalMemory", totalMemory)
+        .add("optimizingProcessCount", optimizingProcessCount)
+        .add("optimizingInputFileCount", optimizingInputFileCount)
+        .add("optimizingInputDataSize", optimizingInputDataSize)
+        .add("inputFileAverageSize", optimizingOutputFileCount)
+        .add("outputFileAverageSize", optimizingOutputDataSize)
         .toString();
   }
 }
