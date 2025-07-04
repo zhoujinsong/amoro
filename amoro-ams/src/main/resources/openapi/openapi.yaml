@@ -505,6 +505,19 @@ paths:
         - Overview
       summary: Get overview summary
       description: Get an overview summary
+      parameters:
+        - name: startTime
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The start time for the history
+        - name: catalogName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The catalog name of the optimizing file statistics
       responses:
         '200':
           description: Successful response
@@ -902,6 +915,16 @@ components:
         totalCpu:
           type: integer
         totalMemory:
+          type: integer
+        optimizingProcessCount:
+          type: integer
+        optimizingInputFileCount:
+          type: integer
+        optimizingInputDataSize:
+          type: integer
+        optimizingOutputFileCount:
+          type: integer
+        optimizingOutputDataSize:
           type: integer
     OptimizerResourceInfo:
       type: object
