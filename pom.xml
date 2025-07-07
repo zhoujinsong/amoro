@@ -1469,8 +1469,8 @@
                 </repository>
 
                 <repository>
-                    <id>tclake-repo</id>
-                    <name>tclake-repo</name>
+                    <id>tclake-snapshot-repo</id>
+                    <name>tclake-snapshot-repo</name>
                     <url>https://mirrors.tencent.com/repository/maven/tclake-snapshot</url>
                     <snapshots>
                         <enabled>true</enabled>

@@ -18,9 +18,9 @@
 
 package org.apache.amoro.server.dashboard.model;
 
-import com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.base.MoreObjects;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
