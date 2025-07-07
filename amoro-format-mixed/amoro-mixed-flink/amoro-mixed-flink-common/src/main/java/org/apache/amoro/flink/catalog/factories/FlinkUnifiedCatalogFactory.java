@@ -104,8 +104,10 @@ public class FlinkUnifiedCatalogFactory implements CatalogFactory {
         CatalogUtil.tableFormats(unifiedCatalog.metastoreType(), unifiedCatalog.properties());
     validate(tableFormats);
 
-    return new FlinkUnifiedCatalog(
-        metastoreUrl, defaultDatabase, unifiedCatalog, context, hadoopConf);
+    return metastoreUrl != null
+        ? new FlinkUnifiedCatalog(
+            metastoreUrl, defaultDatabase, unifiedCatalog, context, hadoopConf)
+        : new FlinkUnifiedCatalog(defaultDatabase, unifiedCatalog, context, hadoopConf);
   }
 
   private void validate(Set<TableFormat> expectedFormats) {

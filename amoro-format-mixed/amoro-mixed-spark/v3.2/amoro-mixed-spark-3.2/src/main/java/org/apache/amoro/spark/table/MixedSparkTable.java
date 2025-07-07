@@ -97,6 +97,14 @@ public class MixedSparkTable
     return lazySpark;
   }
 
+  public MixedFormatCatalog getCatalog() {
+    return catalog;
+  }
+
+  public String getSparkCatalogName() {
+    return sparkCatalogName;
+  }
+
   public MixedTable table() {
     return mixedTable;
   }
