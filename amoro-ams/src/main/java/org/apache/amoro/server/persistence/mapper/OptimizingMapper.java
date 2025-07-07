@@ -46,6 +46,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import org.apache.ibatis.type.JdbcType;
 
+import java.sql.Timestamp;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -179,6 +180,21 @@ public interface OptimizingMapper {
       @Param("dbName") String dbName,
       @Param("tableName") String tableName,
       @Param("processId") String processId);
+
+  @Select(
+      "<script>"
+          + "SELECT summary "
+          + "FROM table_optimizing_process"
+          + " WHERE catalog_name = #{catalogName}"
+          + " <if test='optimizingStatus != null'> AND status = #{optimizingStatus}</if>"
+          + " AND end_time BETWEEN #{beginTime} AND #{endTime}"
+          + " ORDER BY process_id desc"
+          + "</script>")
+  List<String> selectProcessesMetrics(
+      @Param("catalogName") String catalogName,
+      @Param("optimizingStatus") ProcessStatus optimizingStatus,
+      @Param("beginTime") Timestamp beginTime,
+      @Param("endTime") Timestamp endTime);
 
   @Select(
       "SELECT a.process_id, a.table_id, a.catalog_name, a.db_name, a.table_name, a.target_snapshot_id,"

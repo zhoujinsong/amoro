@@ -108,14 +108,18 @@ public class OverviewController {
   }
 
   public void getSummary(Context ctx) {
-    int totalCatalog = manager.getTotalCatalog();
-    int totalTableCount = manager.getTotalTableCount();
-    long totalDataSize = manager.getTotalDataSize();
-    int totalCpu = manager.getTotalCpu();
-    long totalMemory = manager.getTotalMemory();
-
-    OverviewSummary overviewSummary =
-        new OverviewSummary(totalCatalog, totalTableCount, totalDataSize, totalCpu, totalMemory);
+    String startTime = ctx.queryParam("startTime");
+    String catalogName = ctx.queryParam("catalog");
+    OverviewSummary overviewSummary;
+    if (StringUtils.isBlank(startTime)) {
+      startTime = Long.toString(System.currentTimeMillis());
+    }
+    Preconditions.checkArgument(StringUtils.isNumeric(startTime), "invalid startTime!");
+    if (StringUtils.isBlank(catalogName)) {
+      overviewSummary = manager.getAllCatalogSummary(Long.parseLong(startTime));
+    } else {
+      overviewSummary = manager.getCatalogOptimizing(Long.parseLong(startTime), catalogName);
+    }
     ctx.json(OkResponse.of(overviewSummary));
   }
 
