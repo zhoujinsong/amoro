@@ -189,4 +189,67 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>tclake</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+
+            <properties>
+                <tclake-cos-credential.version>0.1-SNAPSHOT</tclake-cos-credential.version>
+                <tclake-iceberg-catalog.version>0.1-SNAPSHOT</tclake-iceberg-catalog.version>
+            </properties>
+
+            <dependencies>
+                <dependency>
+                    <groupId>com.qcloud</groupId>
+                    <artifactId>chdfs_hadoop_plugin_network</artifactId>
+                </dependency>
+
+                <dependency>
+                    <groupId>com.qcloud</groupId>
+                    <artifactId>cos_api-bundle</artifactId>
+                </dependency>
+
+                <dependency>
+                    <groupId>com.qcloud.cos</groupId>
+                    <artifactId>hadoop-cos</artifactId>
+                </dependency>
+
+                <dependency>
+                    <groupId>com.tencent.cloud.tclake</groupId>
+                    <artifactId>tclake-cos-credential</artifactId>
+                    <version>${tclake-cos-credential.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.tencent.cloud.tclake</groupId>
+                            <artifactId>common</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.tencent.cloud.tclake</groupId>
+                            <artifactId>metadata</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+
+                <dependency>
+                    <groupId>com.tencent.cloud.tclake</groupId>
+                    <artifactId>tclake-iceberg-catalog</artifactId>
+                    <version>${tclake-iceberg-catalog.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.tencent.cloud.tclake</groupId>
+                            <artifactId>common</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.tencent.cloud.tclake</groupId>
+                            <artifactId>metadata</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>
