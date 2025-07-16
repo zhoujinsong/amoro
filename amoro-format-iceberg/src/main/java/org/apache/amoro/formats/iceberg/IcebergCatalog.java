@@ -124,7 +124,6 @@ public class IcebergCatalog implements FormatCatalog {
                     CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR,
                     CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR_DEFAULT);
             String changeStoreSuffix = separator + MixedTable.CHANGE_STORE_IDENTIFIER + separator;
-            ;
             names.forEach(
                 name -> {
                   if (!name.endsWith(changeStoreSuffix)
