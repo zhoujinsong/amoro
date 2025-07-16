@@ -19,6 +19,7 @@
 package org.apache.amoro;
 
 import org.apache.amoro.api.CatalogMeta;
+import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
@@ -214,6 +215,13 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
     ServiceLoader<FormatCatalogFactory> loader = ServiceLoader.load(FormatCatalogFactory.class);
     Set<TableFormat> formats = CatalogUtil.tableFormats(metaStoreType, catalogProperties);
     Map<TableFormat, FormatCatalog> formatCatalogs = Maps.newConcurrentMap();
+    // Filter mixed change store for iceberg catalog if containing both Iceberg and Mixed Iceberg
+    // formats
+    if (formats.contains(TableFormat.ICEBERG)
+        && formats.contains(TableFormat.MIXED_ICEBERG)
+        && !metaStoreType.equals(CatalogMetaProperties.CATALOG_TYPE_AMS)) {
+      catalogProperties.put(CatalogMetaProperties.FILTER_MIXED_CHANGE_STORE_TABLE, "true");
+    }
     for (FormatCatalogFactory factory : loader) {
       if (formats.contains(factory.format())) {
         Map<String, String> formatCatalogProperties =

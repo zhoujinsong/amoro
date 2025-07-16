@@ -20,8 +20,12 @@ package org.apache.amoro.formats.iceberg;
 
 import org.apache.amoro.AmoroTable;
 import org.apache.amoro.FormatCatalog;
+import org.apache.amoro.properties.CatalogMetaProperties;
+import org.apache.amoro.table.MixedTable;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.MixedFormatCatalogUtil;
+import org.apache.amoro.utils.PropertyUtil;
+import org.apache.commons.compress.utils.Lists;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
@@ -31,6 +35,7 @@ import org.apache.iceberg.exceptions.NoSuchTableException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class IcebergCatalog implements FormatCatalog {
@@ -39,6 +44,7 @@ public class IcebergCatalog implements FormatCatalog {
   private final Catalog icebergCatalog;
   private final TableMetaStore metaStore;
   private final Map<String, String> properties;
+  private final boolean filterMixedChangeStoreTable;
 
   public IcebergCatalog(Catalog catalog, Map<String, String> properties, TableMetaStore metaStore) {
     this.icebergCatalog = MixedFormatCatalogUtil.buildCacheCatalog(catalog, properties);
@@ -47,6 +53,9 @@ public class IcebergCatalog implements FormatCatalog {
     }
     this.metaStore = metaStore;
     this.properties = properties;
+    this.filterMixedChangeStoreTable =
+        PropertyUtil.propertyAsBoolean(
+            properties, CatalogMetaProperties.FILTER_MIXED_CHANGE_STORE_TABLE, false);
   }
 
   @Override
@@ -104,10 +113,31 @@ public class IcebergCatalog implements FormatCatalog {
   @Override
   public List<String> listTables(String database) {
     return metaStore.doAs(
-        () ->
-            icebergCatalog.listTables(Namespace.of(database)).stream()
-                .map(TableIdentifier::name)
-                .collect(Collectors.toList()));
+        () -> {
+          List<TableIdentifier> identifiers = icebergCatalog.listTables(Namespace.of(database));
+          if (filterMixedChangeStoreTable) {
+            Set<String> names =
+                identifiers.stream().map(TableIdentifier::name).collect(Collectors.toSet());
+            List<String> tables = Lists.newArrayList();
+            String separator =
+                properties.getOrDefault(
+                    CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR,
+                    CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR_DEFAULT);
+            String changeStoreSuffix = separator + MixedTable.CHANGE_STORE_IDENTIFIER + separator;
+            ;
+            names.forEach(
+                name -> {
+                  if (!name.endsWith(changeStoreSuffix)
+                      || !names.contains(
+                          name.substring(0, name.length() - changeStoreSuffix.length()))) {
+                    tables.add(name);
+                  }
+                });
+            return tables;
+          } else {
+            return identifiers.stream().map(TableIdentifier::name).collect(Collectors.toList());
+          }
+        });
   }
 
   @Override

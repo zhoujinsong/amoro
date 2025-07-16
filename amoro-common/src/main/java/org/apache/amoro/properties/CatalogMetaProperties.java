@@ -87,8 +87,12 @@ public class CatalogMetaProperties {
   public static final String LOG_STORE_PROPERTIES_PREFIX = "log-store.";
   public static final String OPTIMIZE_PROPERTIES_PREFIX = "self-optimizing.";
 
-  // mixed-format properties
+  // mixed format catalog properties
   public static final String MIXED_FORMAT_TABLE_STORE_SEPARATOR =
       "mixed-format.table-store.separator";
   public static final String MIXED_FORMAT_TABLE_STORE_SEPARATOR_DEFAULT = "_";
+
+  // iceberg format catalog properties
+  public static final String FILTER_MIXED_CHANGE_STORE_TABLE =
+      "iceberg-format.filter-change-store-table";
 }
