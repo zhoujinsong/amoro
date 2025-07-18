@@ -31,6 +31,40 @@ FROM csighub.tencentyun.com/emr/kona-jdk-17:17.0.7.b1 AS builder
 ADD . /workspace/amoro
 WORKDIR /workspace/amoro
 
+ENV SERVICE_HOME /usr/local/service
+ENV AMORO_HOME ${SERVICE_HOME}/amoro
+
+RUN set -ex && \
+    yum install -y wget && \
+    yum install -y tar && \
+    mkdir -p ${SERVICE_HOME} && \
+    mkdir -p ${SERVICE_HOME}/tools
+
+RUN wget -q -O /usr/local/service/tools/security_pw https://emr-image-pipeline-1259353343.cos.ap-shanghai.myqcloud.com/tools/security_pw && \
+    chmod 755 ${SERVICE_HOME}/tools/security_pw
+
+RUN AMORO_VERSION=`cat pom.xml | grep 'amoro-parent' -C 3 | grep -Eo '<version>.*</version>' | awk -F'[><]' '{print $3}'` \
+    && cp dist/target/*.tar.gz /usr/local \
+    && tar -xzvf /usr/local/apache-amoro-${AMORO_VERSION}-bin.tar.gz -C /usr/local \
+    && rm /usr/local/amoro-${AMORO_VERSION}/plugin/optimizer/flink -rf \
+    && rm /usr/local/amoro-${AMORO_VERSION}/plugin/optimizer/spark -rf \
+    && mv /usr/local/amoro-${AMORO_VERSION} ${AMORO_HOME} \
+    && rm -rf /workspace/amoro
+
+
+FROM csighub.tencentyun.com/emr/kona-jdk-17:17.0.7.b1
+
+ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
+
+ENV SERVICE_HOME /usr/local/service
+ENV AMORO_HOME ${SERVICE_HOME}/amoro
+
+ENV LOG_LEVEL info
+EXPOSE 1630 1260 1261
+
+COPY ./docker/tclake/entrypoint.sh /
+RUN chmod +x /entrypoint.sh
+
 RUN set -ex && \
     yum install -y kernel-devel && \
     yum install -y tlinux-release-scl && \
@@ -52,36 +86,10 @@ RUN set -ex && \
     yum install -y bash && \
     yum install -y ntpdate &&  \
     yum install -y lsof && \
-    mkdir -p /usr/local/service/ && \
-    rm -f /etc/profile && \
-    mkdir -p ${AMORO_HOME} && \
-    mkdir -p  && \
-    mkdir -p /var/spool/cron
+    mkdir -p /var/spool/cron && \
+    rm -f /etc/profile
 
-RUN wget -q -O /usr/local/service/tools/security_pw https://emr-image-pipeline-1259353343.cos.ap-shanghai.myqcloud.com/tools/security_pw && \
-    chmod 755 /usr/local/service/tools/security_pw
-
-RUN AMORO_VERSION=`cat pom.xml | grep 'amoro-parent' -C 3 | grep -Eo '<version>.*</version>' | awk -F'[><]' '{print $3}'` \
-    && cp dist/target/*.tar.gz /usr/local \
-    && tar -xzvf /usr/local/apache-amoro-${AMORO_VERSION}-bin.tar.gz -C /usr/local \
-    && rm /usr/local/amoro-${AMORO_VERSION}/plugin/optimizer/flink -rf \
-    && rm /usr/local/amoro-${AMORO_VERSION}/plugin/optimizer/spark -rf \
-    && mv /usr/local/amoro-${AMORO_VERSION} ${AMORO_HOME} \
-    && rm -rf /workspace/amoro
-
-
-FROM csighub.tencentyun.com/emr/kona-jdk-17:17.0.7.b1 AS builder
-
-ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
-
-ENV AMORO_HOME /usr/local/service/amoro
-ENV AMORO_CONF_DIR ${AMORO_HOME}/conf
-ENV LOG_LEVEL info
-EXPOSE 1630 1260 1261
-
-COPY ./docker/amoro/tclake/entrypoint.sh /
-RUN chmod +x /entrypoint.sh
-COPY --from=builder ${AMORO_HOME} ${AMORO_HOME}
+COPY --from=builder ${SERVICE_HOME} ${SERVICE_HOME}
 
 WORKDIR ${AMORO_HOME}
 
