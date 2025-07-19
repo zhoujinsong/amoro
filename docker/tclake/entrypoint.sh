@@ -88,10 +88,6 @@ elif [ "$1" == "optimizer" ]; then
   args=("${args[@]:1}")
   echo "Start Amoro Optimizer"
   exec "$AMORO_HOME/bin/optimizer.sh" "start-foreground" "${args[@]}"
-elif [ "$1" == "help" ]; then
-  printf "Usage: $(basename $0) [ams|optimizer] [args]\n"
-  printf "   Or: $(basename $0) help \n\n"
-  exit 0
 else
   sartAMS
 fi
