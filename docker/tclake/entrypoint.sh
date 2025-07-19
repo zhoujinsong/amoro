@@ -42,40 +42,39 @@ configure_jvm_options() {
 }
 
 function extract_ip_from_jdbc() {
-    local jdbc_url=$1
-    local ip_address=$(echo "$jdbc_url" | grep -oP '(?<=jdbc:mysql://)[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(?=:)')
-    echo "$ip_address"
+  local jdbc_url=$1
+  local ip_address=$(echo "$jdbc_url" | grep -oP '(?<=jdbc:mysql://)[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(?=:)')
+  echo "$ip_address"
 }
 
 function init_mysql() {
-  if [ -z "$HIVE_META_URL" ] || [ -z "$HIVE_META_USER" ]; then
-      echo "Error: HIVE_META_URL and HIVE_META_USER environment variables must be set."
-      exit 1
-  fi
 
-    REAL_PASSWORD=$(/usr/local/service/tools/security_pw -tp cdb -op decode -pw "${HIVE_META_PASSWORD}")
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to decode password."
-        exit 1
-    fi
-    MYSQL_HOST=$(extract_ip_from_jdbc "$HIVE_META_URL")
-    if [ -z "$MYSQL_HOST" ] ; then
-        echo "Error: Cannot get IP from HIVE_META_URL."
-        exit 1
-    fi
-    mysql -h"$MYSQL_HOST" -u"$HIVE_META_USER" -p"$REAL_PASSWORD" <<EOF
-        create database if not exists amoro;
+  REAL_PASSWORD=$(/usr/local/service/tools/security_pw -tp cdb -op decode -pw "${HIVE_META_PASSWORD}")
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to decode password."
+    exit 1
+  fi
+  MYSQL_HOST=$(extract_ip_from_jdbc "$HIVE_META_URL")
+  if [ -z "$MYSQL_HOST" ] ; then
+    echo "Error: Cannot get IP from HIVE_META_URL."
+    exit 1
+  fi
+  mysql -h"$MYSQL_HOST" -u"$HIVE_META_USER" -p"$REAL_PASSWORD" <<EOF
+      create database if not exists amoro;
 EOF
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to init MySQL."
-        exit 1
-    fi
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to init MySQL."
+    exit 1
+  fi
 }
 
 
 configure_jvm_options
 
-init_mysql
+if [ -n "$HIVE_META_URL" ] && [ -n "$HIVE_META_USER" ] && [ -n "$HIVE_META_PASSWORD" ]; then
+  init_mysql
+fi
+
 
 if [ $1 == "help" ]; then
   printf "Usage: $(basename $0) [ams|optimizer] [args]\n"
