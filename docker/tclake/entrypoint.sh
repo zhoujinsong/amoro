@@ -91,4 +91,6 @@ elif [ "$1" == "optimizer" ]; then
 fi
 
 # Running command in pass-through mode
-exec "${args[@]}"
+# exec "${args[@]}"
+
+sleep infinity
