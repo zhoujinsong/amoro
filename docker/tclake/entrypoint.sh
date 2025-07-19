@@ -70,6 +70,11 @@ EOF
   fi
 }
 
+function sartAMS() {
+  echo "Start Amoro Management Service"
+  exec "$AMORO_HOME/bin/ams.sh" "start-foreground"
+}
+
 
 configure_jvm_options
 
@@ -77,16 +82,16 @@ if [ -n "$HIVE_META_URL" ] && [ -n "$HIVE_META_USER" ] && [ -n "$HIVE_META_PASSW
   init_mysql
 fi
 
-if [ $# -eq 0 ] || [ $1 == "ams" ]; then
-  args=("${args[@]:1}")
-  echo "Start Amoro Management Service"
-  exec "$AMORO_HOME/bin/ams.sh" "start-foreground"
-elif [ "$1" == "help" ]; then
-  printf "Usage: $(basename $0) [ams|optimizer] [args]\n"
-  printf "   Or: $(basename $0) help \n\n"
-  exit 0
+if [ $# -eq 0 ]; then
+  startAMS
 elif [ "$1" == "optimizer" ]; then
   args=("${args[@]:1}")
   echo "Start Amoro Optimizer"
   exec "$AMORO_HOME/bin/optimizer.sh" "start-foreground" "${args[@]}"
+elif [ "$1" == "help" ]; then
+  printf "Usage: $(basename $0) [ams|optimizer] [args]\n"
+  printf "   Or: $(basename $0) help \n\n"
+  exit 0
+else
+  sartAMS
 fi
