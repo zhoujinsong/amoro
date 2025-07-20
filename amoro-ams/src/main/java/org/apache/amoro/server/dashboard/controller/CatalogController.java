@@ -421,66 +421,61 @@ public class CatalogController {
       throw new RuntimeException(
           "Invalid table format list, " + String.join(",", info.getTableFormatList()));
     }
-    // Do not update catalog storage config when new config is null
-    if (info.getStorageConfig() == null && oldCatalogMeta != null) {
-      catalogMeta.setStorageConfigs(oldCatalogMeta.getStorageConfigs());
-    } else {
-      catalogMeta.getCatalogProperties().put(CatalogMetaProperties.TABLE_FORMATS, tableFormats);
-      String storageType =
-          info.getStorageConfig()
-              .getOrDefault(STORAGE_CONFIGS_KEY_TYPE, STORAGE_CONFIGS_VALUE_TYPE_HADOOP);
-      fillAuthConfigs2CatalogMeta(catalogMeta, info.getAuthConfig(), oldCatalogMeta, storageType);
-      // change fileId to base64Code
-      Map<String, String> metaStorageConfig = new HashMap<>();
-      metaStorageConfig.put(STORAGE_CONFIGS_KEY_TYPE, storageType);
-      if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_HADOOP)) {
-        List<String> metaKeyList =
-            Arrays.asList(
-                STORAGE_CONFIGS_KEY_HDFS_SITE,
-                STORAGE_CONFIGS_KEY_CORE_SITE,
-                STORAGE_CONFIGS_KEY_HIVE_SITE);
+    catalogMeta.getCatalogProperties().put(CatalogMetaProperties.TABLE_FORMATS, tableFormats);
+    String storageType =
+        info.getStorageConfig()
+            .getOrDefault(STORAGE_CONFIGS_KEY_TYPE, STORAGE_CONFIGS_VALUE_TYPE_HADOOP);
+    fillAuthConfigs2CatalogMeta(catalogMeta, info.getAuthConfig(), oldCatalogMeta, storageType);
+    // change fileId to base64Code
+    Map<String, String> metaStorageConfig = new HashMap<>();
+    metaStorageConfig.put(STORAGE_CONFIGS_KEY_TYPE, storageType);
+    if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_HADOOP)) {
+      List<String> metaKeyList =
+          Arrays.asList(
+              STORAGE_CONFIGS_KEY_HDFS_SITE,
+              STORAGE_CONFIGS_KEY_CORE_SITE,
+              STORAGE_CONFIGS_KEY_HIVE_SITE);
 
-        // when update catalog, fileId won't be post when file doesn't been changed!
-        int idx;
-        for (idx = 0; idx < metaKeyList.size(); idx++) {
-          String file =
-              getFileContent(
-                  info.getStorageConfig(),
-                  metaKeyList.get(idx),
-                  oldCatalogMeta == null ? null : oldCatalogMeta.getStorageConfigs());
-          metaStorageConfig.put(
-              metaKeyList.get(idx), StringUtils.isEmpty(file) ? EMPTY_XML_BASE64 : file);
-        }
-      } else if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_S3)) {
-        CatalogUtil.copyProperty(
-            info.getStorageConfig(),
-            catalogMeta.getCatalogProperties(),
-            STORAGE_CONFIGS_KEY_REGION,
-            AwsClientProperties.CLIENT_REGION);
-        CatalogUtil.copyProperty(
-            info.getStorageConfig(),
-            catalogMeta.getCatalogProperties(),
-            STORAGE_CONFIGS_KEY_S3_ENDPOINT,
-            S3FileIOProperties.ENDPOINT);
-      } else if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_OSS)) {
-        if (TableFormat.valueOf(tableFormats) == TableFormat.ICEBERG) {
-          CatalogUtil.copyProperty(
-              info.getStorageConfig(),
-              catalogMeta.getCatalogProperties(),
-              STORAGE_CONFIGS_KEY_OSS_ENDPOINT,
-              AliyunProperties.OSS_ENDPOINT);
-        } else if (TableFormat.valueOf(tableFormats) == PAIMON) {
-          CatalogUtil.copyProperty(
-              info.getStorageConfig(),
-              catalogMeta.getCatalogProperties(),
-              STORAGE_CONFIGS_KEY_OSS_ENDPOINT,
-              "fs.oss.endpoint");
-        }
-      } else {
-        throw new RuntimeException("Invalid storage type " + storageType);
+      // when update catalog, fileId won't be post when file doesn't been changed!
+      int idx;
+      for (idx = 0; idx < metaKeyList.size(); idx++) {
+        String file =
+            getFileContent(
+                info.getStorageConfig(),
+                metaKeyList.get(idx),
+                oldCatalogMeta == null ? null : oldCatalogMeta.getStorageConfigs());
+        metaStorageConfig.put(
+            metaKeyList.get(idx), StringUtils.isEmpty(file) ? EMPTY_XML_BASE64 : file);
       }
-      catalogMeta.setStorageConfigs(metaStorageConfig);
+    } else if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_S3)) {
+      CatalogUtil.copyProperty(
+          info.getStorageConfig(),
+          catalogMeta.getCatalogProperties(),
+          STORAGE_CONFIGS_KEY_REGION,
+          AwsClientProperties.CLIENT_REGION);
+      CatalogUtil.copyProperty(
+          info.getStorageConfig(),
+          catalogMeta.getCatalogProperties(),
+          STORAGE_CONFIGS_KEY_S3_ENDPOINT,
+          S3FileIOProperties.ENDPOINT);
+    } else if (storageType.equals(STORAGE_CONFIGS_VALUE_TYPE_OSS)) {
+      if (TableFormat.valueOf(tableFormats) == TableFormat.ICEBERG) {
+        CatalogUtil.copyProperty(
+            info.getStorageConfig(),
+            catalogMeta.getCatalogProperties(),
+            STORAGE_CONFIGS_KEY_OSS_ENDPOINT,
+            AliyunProperties.OSS_ENDPOINT);
+      } else if (TableFormat.valueOf(tableFormats) == PAIMON) {
+        CatalogUtil.copyProperty(
+            info.getStorageConfig(),
+            catalogMeta.getCatalogProperties(),
+            STORAGE_CONFIGS_KEY_OSS_ENDPOINT,
+            "fs.oss.endpoint");
+      }
+    } else {
+      throw new RuntimeException("Invalid storage type " + storageType);
     }
+    catalogMeta.setStorageConfigs(metaStorageConfig);
 
     return catalogMeta;
   }
@@ -569,6 +564,7 @@ public class CatalogController {
 
   private void validateCatalogRegisterInfo(CatalogRegisterInfo info) {
     Preconditions.checkNotNull(info.getAuthConfig(), "Catalog auth config must not be null");
+    Preconditions.checkNotNull(info.getProperties(), "Catalog storage config must not be null");
     Preconditions.checkNotNull(info.getProperties(), "Catalog properties must not be null");
     Preconditions.checkNotNull(
         info.getTableProperties(), "Catalog table properties must not be null");
