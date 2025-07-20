@@ -569,7 +569,6 @@ public class CatalogController {
 
   private void validateCatalogRegisterInfo(CatalogRegisterInfo info) {
     Preconditions.checkNotNull(info.getAuthConfig(), "Catalog auth config must not be null");
-    Preconditions.checkNotNull(info.getStorageConfig(), "Catalog storage config must not be null");
     Preconditions.checkNotNull(info.getProperties(), "Catalog properties must not be null");
     Preconditions.checkNotNull(
         info.getTableProperties(), "Catalog table properties must not be null");
