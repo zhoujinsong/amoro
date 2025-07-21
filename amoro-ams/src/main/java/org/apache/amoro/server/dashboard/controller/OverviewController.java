@@ -109,16 +109,26 @@ public class OverviewController {
 
   public void getSummary(Context ctx) {
     String startTime = ctx.queryParam("startTime");
+    String endTime = ctx.queryParam("endTime");
     String catalogName = ctx.queryParam("catalog");
     OverviewSummary overviewSummary;
     if (StringUtils.isBlank(startTime)) {
       startTime = Long.toString(System.currentTimeMillis());
     }
-    Preconditions.checkArgument(StringUtils.isNumeric(startTime), "invalid startTime!");
+    if (StringUtils.isBlank(endTime)) {
+      endTime = Long.toString(System.currentTimeMillis());
+    }
+    Preconditions.checkArgument(
+        StringUtils.isNumeric(startTime), "Invalid start time value:%s", startTime);
+    Preconditions.checkArgument(
+        StringUtils.isNumeric(endTime), "Invalid end time value:%s", endTime);
     if (StringUtils.isBlank(catalogName)) {
-      overviewSummary = manager.getAllCatalogSummary(Long.parseLong(startTime));
+      overviewSummary =
+          manager.getAllCatalogSummary(Long.parseLong(startTime), Long.parseLong(endTime));
     } else {
-      overviewSummary = manager.getCatalogOptimizing(Long.parseLong(startTime), catalogName);
+      overviewSummary =
+          manager.getCatalogOptimizing(
+              Long.parseLong(startTime), Long.parseLong(endTime), catalogName);
     }
     ctx.json(OkResponse.of(overviewSummary));
   }

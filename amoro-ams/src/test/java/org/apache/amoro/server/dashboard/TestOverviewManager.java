@@ -118,7 +118,8 @@ public class TestOverviewManager extends AMSTableTestBase {
   public void testOverviewCache() {
     // empty table
     OverviewSummary overviewSummary =
-        overviewManager.getAllCatalogSummary(System.currentTimeMillis());
+        overviewManager.getAllCatalogSummary(
+            System.currentTimeMillis(), System.currentTimeMillis());
     Assertions.assertEquals(1, overviewSummary.getCatalogCnt());
     Assertions.assertEquals(1, overviewSummary.getTableCnt());
     Assertions.assertEquals(0, overviewSummary.getTableTotalSize());
@@ -143,7 +144,9 @@ public class TestOverviewManager extends AMSTableTestBase {
     refreshPending();
     overviewManager.refresh();
 
-    overviewSummary = overviewManager.getAllCatalogSummary(System.currentTimeMillis());
+    overviewSummary =
+        overviewManager.getAllCatalogSummary(
+            System.currentTimeMillis(), System.currentTimeMillis());
     Assertions.assertTrue(overviewSummary.getTableTotalSize() > 0);
 
     Assertions.assertEquals(1, overviewManager.getOptimizingStatus().get(STATUS_PENDING));

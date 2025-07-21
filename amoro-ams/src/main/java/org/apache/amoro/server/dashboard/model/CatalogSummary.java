@@ -75,8 +75,7 @@ public class CatalogSummary {
     return totalMemory;
   }
 
-  public OverviewSummary summary(long startTime) {
-    LocalDateTime now = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0);
+  public OverviewSummary summary(long startTime, long endTime) {
     LocalDateTime start =
         Instant.ofEpochMilli(startTime)
             .atZone(TimeZone.getDefault().toZoneId())
@@ -84,8 +83,15 @@ public class CatalogSummary {
             .withMinute(0)
             .withSecond(0)
             .withNano(0);
+    LocalDateTime end =
+        Instant.ofEpochMilli(endTime)
+            .atZone(TimeZone.getDefault().toZoneId())
+            .toLocalDateTime()
+            .withMinute(0)
+            .withSecond(0)
+            .withNano(0);
     List<OptimizingSummary> optimizingSummaries = Lists.newArrayList();
-    while (start.isBefore(now) || start.equals(now)) {
+    while (start.isBefore(end) || start.equals(end)) {
       if (optimizingSummariesPerHour.containsKey(start)) {
         optimizingSummaries.add(optimizingSummariesPerHour.get(start));
       }

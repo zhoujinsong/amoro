@@ -127,10 +127,10 @@ public class OverviewManager extends PersistentBase {
         .collect(Collectors.toList());
   }
 
-  public OverviewSummary getAllCatalogSummary(long startTime) {
+  public OverviewSummary getAllCatalogSummary(long startTime, long endTime) {
     List<OverviewSummary> catalogSummaries = Lists.newArrayList();
     for (CatalogSummary catalogSummary : catalogSummaryMap.values()) {
-      catalogSummaries.add(catalogSummary.summary(startTime));
+      catalogSummaries.add(catalogSummary.summary(startTime, endTime));
     }
     OverviewSummary summary = OverviewSummary.aggregate(catalogSummaries);
     summary.setTotalCpu(totalCpu.get());
@@ -138,7 +138,7 @@ public class OverviewManager extends PersistentBase {
     return summary;
   }
 
-  public OverviewSummary getCatalogOptimizing(long startTime, String catalogName) {
+  public OverviewSummary getCatalogOptimizing(long startTime, long endTime, String catalogName) {
     CatalogSummary catalogSummary = catalogSummaryMap.get(catalogName);
     // Prevent the catalog summary is not refreshed
     if (catalogSummary == null) {
