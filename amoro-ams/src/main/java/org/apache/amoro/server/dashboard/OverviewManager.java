@@ -144,7 +144,7 @@ public class OverviewManager extends PersistentBase {
     if (catalogSummary == null) {
       catalogSummary = new CatalogSummary();
     }
-    return catalogSummary.summary(startTime);
+    return catalogSummary.summary(startTime, endTime);
   }
 
   public Map<String, Long> getOptimizingStatus() {
