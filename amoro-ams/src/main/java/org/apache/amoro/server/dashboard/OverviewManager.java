@@ -18,7 +18,6 @@
 
 package org.apache.amoro.server.dashboard;
 
-import com.clearspring.analytics.util.Lists;
 import org.apache.amoro.api.CatalogMeta;
 import org.apache.amoro.config.Configurations;
 import org.apache.amoro.optimizing.MetricsSummary;
@@ -40,6 +39,7 @@ import org.apache.amoro.server.persistence.mapper.TableMetaMapper;
 import org.apache.amoro.server.resource.OptimizerInstance;
 import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTesting;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableList;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.amoro.utils.JacksonUtil;
