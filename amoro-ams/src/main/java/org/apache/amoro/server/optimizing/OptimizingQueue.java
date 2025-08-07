@@ -269,16 +269,15 @@ public class OptimizingQueue extends PersistentBase {
                           .map(item -> item + "")
                           .collect(Collectors.joining(","));
                   LOG.info(
-                      "Completed planning on table {} with {} tasks with a total cost of {} ms, skipping {} tables,"
-                          + " id list:{}",
+                      "Completed planning on table {} with {} tasks with a total cost of {} ms, skipping {} tables.",
                       tableRuntime.getTableIdentifier(),
                       process.getTaskMap().size(),
                       currentTime - startTime,
-                      skipTables.size(),
-                      skipIds);
+                      skipTables.size());
+                  LOG.debug("Skipped planning table IDs:{}", skipIds);
                 } else if (throwable == null) {
                   LOG.info(
-                      "Skip planning table {} with a total cost of {} ms.",
+                      "Skipping planning table {} with a total cost of {} ms.",
                       tableRuntime.getTableIdentifier(),
                       currentTime - startTime);
                 }
@@ -508,6 +507,10 @@ public class OptimizingQueue extends PersistentBase {
                 taskRuntime.getFailReason());
             retryTask(taskRuntime);
           } else {
+            LOG.info(
+                "Task {} has reached the max execute retry count. Process {} failed.",
+                taskRuntime.getTaskId(),
+                processId);
             this.failedReason = taskRuntime.getFailReason();
             this.status = ProcessStatus.FAILED;
             this.endTime = taskRuntime.getEndTime();

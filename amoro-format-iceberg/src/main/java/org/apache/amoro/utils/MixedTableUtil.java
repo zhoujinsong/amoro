@@ -243,7 +243,7 @@ public class MixedTableUtil {
         Set<String> unsupportedFields = Sets.newHashSet(primaryKeySpec.fieldNames());
         unsupportedFields.addAll(
             partitionSpec.fields().stream()
-                .map(PartitionField::fieldId)
+                .map(PartitionField::sourceId)
                 .map(schema::findField)
                 .map(Types.NestedField::name)
                 .collect(Collectors.toSet()));
@@ -274,6 +274,20 @@ public class MixedTableUtil {
         break;
       default:
         throw new IllegalArgumentException("Unsupported merge function:" + mergeFunction);
+    }
+  }
+
+  public static void validateSchema(Schema schema, PrimaryKeySpec primaryKeySpec) {
+    if (primaryKeySpec.primaryKeyExisted()) {
+      primaryKeySpec
+          .fieldNames()
+          .forEach(
+              fieldName -> {
+                if (schema.findField(fieldName).isOptional()) {
+                  throw new IllegalArgumentException(
+                      "Primary key filed:" + fieldName + " can not be optional");
+                }
+              });
     }
   }
 }
