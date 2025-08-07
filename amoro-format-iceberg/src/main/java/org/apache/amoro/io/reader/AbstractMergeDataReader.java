@@ -107,18 +107,20 @@ public abstract class AbstractMergeDataReader<T> extends AbstractKeyedDataReader
     StructProjection changeProjectRow =
         StructProjection.create(baseRequiredSchema, primaryKeySpec.getPkSchema());
     Function<T, StructLike> asStructLike = this.toStructLikeFunction().apply(baseRequiredSchema);
-    baseRecords =
-        CloseableIterable.transform(
-            baseRecords,
-            record -> {
-              StructLike key = changeProjectRow.copyFor(asStructLike.apply(record));
-              T changeData = changeMap.remove(key);
-              if (changeData != null) {
-                return mergeFunction().merge(record, changeData);
-              } else {
-                return record;
-              }
-            });
+    if (!changeMap.isEmpty()) {
+      baseRecords =
+          CloseableIterable.transform(
+              baseRecords,
+              record -> {
+                StructLike key = changeProjectRow.copyFor(asStructLike.apply(record));
+                T changeData = changeMap.remove(key);
+                if (changeData != null) {
+                  return mergeFunction().merge(record, changeData);
+                } else {
+                  return record;
+                }
+              });
+    }
     return CloseableIterable.concat(
             Lists.newArrayList(
                 baseRecords, CloseableIterable.withNoopClose(changeMap.valuesIterable())))

@@ -19,6 +19,7 @@
 package org.apache.amoro.spark.table;
 
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableSet;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.spark.reader.SparkScanBuilder;
 import org.apache.amoro.table.BasicUnkeyedTable;
 import org.apache.amoro.table.MetadataColumns;
@@ -34,7 +35,6 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public class SparkInternalTable extends SparkTable {
 
@@ -67,14 +67,18 @@ public class SparkInternalTable extends SparkTable {
 
   @Override
   public ScanBuilder newScanBuilder(CaseInsensitiveStringMap options) {
-    return new SparkScanBuilder(
-        sparkSession(), basicUnkeyedTable, options, buildSchema(basicUnkeyedTable));
+    if (isChange) {
+      return new SparkScanBuilder(
+          sparkSession(), basicUnkeyedTable, options, buildSchema(basicUnkeyedTable));
+    } else {
+      return super.newScanBuilder(options);
+    }
   }
 
   public Schema buildSchema(BasicUnkeyedTable table) {
     Schema schema = table.schema();
     if (isChange) {
-      List<Types.NestedField> columns = schema.columns().stream().collect(Collectors.toList());
+      List<Types.NestedField> columns = Lists.newArrayList(schema.columns());
       columns.add(MetadataColumns.TRANSACTION_ID_FILED);
       columns.add(MetadataColumns.FILE_OFFSET_FILED);
       columns.add(MetadataColumns.CHANGE_ACTION_FIELD);
