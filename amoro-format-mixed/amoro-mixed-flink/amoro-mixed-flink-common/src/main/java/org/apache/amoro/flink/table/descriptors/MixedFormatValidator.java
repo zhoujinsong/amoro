@@ -284,7 +284,7 @@ public class MixedFormatValidator extends ConnectorDescriptorValidator {
                   + " number of shard bits will not exceed 6.");
 
   public static final ConfigOption<String> TABLE_FORMAT =
-      ConfigOptions.key("table.format")
+      ConfigOptions.key("table-format")
           .stringType()
           .defaultValue(TableFormat.MIXED_ICEBERG.name())
           .withDescription(

@@ -85,8 +85,8 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   public void initialize(String name, CaseInsensitiveStringMap options) {
     this.name = name;
     Map<String, String> properties = Maps.newHashMap(options);
-    String uri = options.get(SparkUnifiedCatalogProperties.URI);
-    properties.remove(SparkUnifiedCatalogProperties.URI);
+    String uri = options.get(SparkUnifiedCatalogProperties.AMS_URI);
+    properties.remove(SparkUnifiedCatalogProperties.AMS_URI);
     if (StringUtils.isNotEmpty(uri)) {
       AmsThriftUrl catalogUri = AmsThriftUrl.parse(uri, Constants.THRIFT_TABLE_SERVICE_NAME);
       String registerCatalogName = catalogUri.catalogName();

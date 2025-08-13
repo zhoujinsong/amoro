@@ -62,7 +62,7 @@ public class MixedFormatTableLoader implements TableLoader {
 
   public static MixedFormatTableLoader of(
       TableIdentifier tableIdentifier, Map<String, String> flinkTableProperties) {
-    String metastoreUrl = flinkTableProperties.get(CatalogFactoryOptions.METASTORE_URL.key());
+    String metastoreUrl = flinkTableProperties.get(CatalogFactoryOptions.AMS_URI.key());
     return new MixedFormatTableLoader(
         tableIdentifier,
         InternalCatalogBuilder.builder().metastoreUrl(metastoreUrl),

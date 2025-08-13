@@ -34,8 +34,8 @@ public class CatalogFactoryOptions {
   @Deprecated public static final String LEGACY_MIXED_IDENTIFIER = "arctic";
   public static final String UNIFIED_IDENTIFIER = "unified";
 
-  public static final ConfigOption<String> METASTORE_URL =
-      ConfigOptions.key("metastore.url").stringType().noDefaultValue();
+  public static final ConfigOption<String> AMS_URI =
+      ConfigOptions.key("ams.uri").stringType().noDefaultValue();
 
   public static final ConfigOption<String> FLINK_TABLE_FORMATS =
       ConfigOptions.key(TABLE_FORMATS)

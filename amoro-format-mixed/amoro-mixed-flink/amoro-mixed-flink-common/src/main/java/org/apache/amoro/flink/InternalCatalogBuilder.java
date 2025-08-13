@@ -78,6 +78,14 @@ public class InternalCatalogBuilder implements Serializable {
       String hadoopConfDir = properties.get(HADOOP_CONF_DIR);
       configuration = mergeHiveConf(configuration, hiveConfDir, hadoopConfDir);
     }
+    String flinkHadoopPrefix = "flink.hadoop.";
+    for (Map.Entry<String, String> entry : properties.entrySet()) {
+      String k = entry.getKey();
+      String v = entry.getValue();
+      if (k.startsWith(flinkHadoopPrefix)) {
+        configuration.set(k.substring(flinkHadoopPrefix.length()), v);
+      }
+    }
     return configuration;
   }
 

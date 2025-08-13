@@ -22,5 +22,5 @@ package org.apache.amoro.spark;
 public class SparkUnifiedCatalogProperties {
 
   /** AMS URI, to load unified catalog information. */
-  public static final String URI = "uri";
+  public static final String AMS_URI = "ams.uri";
 }

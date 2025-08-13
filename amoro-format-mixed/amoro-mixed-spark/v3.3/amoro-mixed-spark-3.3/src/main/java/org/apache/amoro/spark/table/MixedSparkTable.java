@@ -120,6 +120,14 @@ public class MixedSparkTable
     return lazyTableSchema;
   }
 
+  public MixedFormatCatalog getCatalog() {
+    return catalog;
+  }
+
+  public String getSparkCatalogName() {
+    return sparkCatalogName;
+  }
+
   @Override
   public Transform[] partitioning() {
     return Spark3Util.toTransforms(mixedTable.spec());

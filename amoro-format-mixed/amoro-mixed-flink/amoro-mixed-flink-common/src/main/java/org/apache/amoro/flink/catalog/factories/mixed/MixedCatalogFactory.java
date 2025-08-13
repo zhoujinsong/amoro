@@ -47,7 +47,7 @@ public class MixedCatalogFactory implements CatalogFactory {
         context
             .getOptions()
             .getOrDefault(CommonCatalogOptions.DEFAULT_DATABASE_KEY, MixedCatalog.DEFAULT_DB);
-    final String metastoreUrl = context.getOptions().get(CatalogFactoryOptions.METASTORE_URL.key());
+    final String metastoreUrl = context.getOptions().get(CatalogFactoryOptions.AMS_URI.key());
     final Map<String, String> catalogProperties = getCatalogProperties(context.getOptions());
 
     final InternalCatalogBuilder catalogBuilder =

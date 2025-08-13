@@ -127,7 +127,7 @@ public class FlinkTestBase extends TableTestBase {
   public void config() {
     props = Maps.newHashMap();
     props.put("type", LEGACY_MIXED_IDENTIFIER);
-    props.put(CatalogFactoryOptions.METASTORE_URL.key(), metastoreUrl);
+    props.put(CatalogFactoryOptions.AMS_URI.key(), metastoreUrl);
   }
 
   public static void prepare() throws Exception {
