@@ -37,6 +37,7 @@ import io.javalin.plugin.json.JavalinJackson;
 import org.apache.amoro.TableFormat;
 import org.apache.amoro.events.IcebergReportEvent;
 import org.apache.amoro.exception.ObjectNotExistsException;
+import org.apache.amoro.formats.iceberg.IcebergTable;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.catalog.ExternalCatalog;
@@ -51,18 +52,23 @@ import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
+import org.apache.amoro.table.BasicUnkeyedTable;
 import org.apache.amoro.utils.CatalogUtil;
 import org.apache.amoro.utils.TablePropertyUtil;
+import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.iceberg.metrics.CommitReport;
 import org.apache.iceberg.rest.RESTResponse;
 import org.apache.iceberg.rest.RESTSerializers;
+import org.apache.iceberg.rest.RESTUtil;
 import org.apache.iceberg.rest.requests.CreateNamespaceRequest;
 import org.apache.iceberg.rest.requests.CreateTableRequest;
 import org.apache.iceberg.rest.requests.ReportMetricsRequest;
@@ -79,6 +85,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -367,17 +374,41 @@ public class RestCatalogService extends PersistentBase {
   /** POST PREFIX/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/metrics */
   public void reportMetrics(Context ctx) {
     String catalog = ctx.pathParam("catalog");
+    String database = ctx.pathParam("namespace");
+    String table = ctx.pathParam("table");
     ServerCatalog serverCatalog = catalogManager.getServerCatalog(catalog);
+    Map<String, Object> options = new HashMap<>();
     String bodyJson = ctx.body();
     ReportMetricsRequest metricsRequest = ReportMetricsRequestParser.fromJson(bodyJson);
-    IcebergReportEvent event =
-        new IcebergReportEvent(
-            ctx.pathParam("catalog"),
-            ctx.pathParam("namespace"),
-            ctx.pathParam("table"),
-            serverCatalog instanceof ExternalCatalog,
-            metricsRequest.report());
-    EventsManager.getInstance().emit(event);
+    if (metricsRequest.reportType().equals(ReportMetricsRequest.ReportType.COMMIT_REPORT)) {
+      CommitReport commitReport = (CommitReport) metricsRequest.report();
+      IcebergTable icebergTable =
+          (IcebergTable)
+              serverCatalog.loadTable(
+                  RESTUtil.decodeString(database), RESTUtil.decodeString(table));
+      BasicUnkeyedTable basicUnkeyedTable =
+          (BasicUnkeyedTable) icebergTable.originalTable().asUnkeyedTable();
+
+      if (null == basicUnkeyedTable.snapshot(commitReport.snapshotId())) {
+        basicUnkeyedTable.refresh();
+      }
+      TableMetadata tableMetadata = basicUnkeyedTable.operations().current();
+      LOG.debug("Get table metadata location {}", tableMetadata.metadataFileLocation());
+      options.put(
+          BaseMetastoreTableOperations.METADATA_LOCATION_PROP,
+          tableMetadata.metadataFileLocation());
+      options.put(
+          TableProperties.CURRENT_SNAPSHOT_SUMMARY, tableMetadata.currentSnapshot().summary());
+    }
+    EventsManager.getInstance()
+        .emit(
+            new IcebergReportEvent(
+                ctx.pathParam("catalog"),
+                ctx.pathParam("namespace"),
+                ctx.pathParam("table"),
+                serverCatalog instanceof ExternalCatalog,
+                options,
+                metricsRequest.report()));
   }
 
   private <T> T bodyAsClass(Context ctx, Class<T> clz) {

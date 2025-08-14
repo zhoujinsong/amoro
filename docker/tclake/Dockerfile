@@ -56,6 +56,8 @@ FROM csighub.tencentyun.com/emr/kona-jdk-17:17.0.7.b1
 
 ARG MAVEN_MIRROR=https://repo.maven.apache.org/maven2
 
+ARG TCLAKE_AMORO_EVENT_LISTENER_MIRROR=https://mirrors.tencent.com/repository/maven/tclake-snapshot/com/tencent/cloud/tclake/amoro-plugin/0.2-SNAPSHOT/amoro-plugin-0.2-20250905.021825-1.jar
+
 ENV SERVICE_HOME /usr/local/service
 ENV AMORO_HOME ${SERVICE_HOME}/amoro
 
@@ -95,6 +97,11 @@ WORKDIR ${AMORO_HOME}
 
 RUN cd ${AMORO_HOME}/lib \
     && wget ${MAVEN_MIRROR}/mysql/mysql-connector-java/8.0.30/mysql-connector-java-8.0.30.jar
+
+RUN mkdir -p ${AMORO_HOME}/plugin/event-listeners \
+    && cd ${AMORO_HOME}/plugin/event-listeners  \
+    && wget ${TCLAKE_AMORO_EVENT_LISTENER_MIRROR} \
+    && chmod 644 ${AMORO_HOME}/plugin/event-listeners/*
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["help"]

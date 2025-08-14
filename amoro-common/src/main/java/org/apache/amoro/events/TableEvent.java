@@ -18,6 +18,8 @@
 
 package org.apache.amoro.events;
 
+import java.util.Map;
+
 /** An event associated with a table */
 public interface TableEvent extends Event {
 
@@ -48,4 +50,11 @@ public interface TableEvent extends Event {
    * @return True if event source from an external catalog.
    */
   boolean isExternal();
+
+  /**
+   * The table event options related to.
+   *
+   * @return Table event options
+   */
+  Map<String, Object> options();
 }
