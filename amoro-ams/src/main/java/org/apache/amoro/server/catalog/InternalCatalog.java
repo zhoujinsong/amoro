@@ -26,8 +26,10 @@ import org.apache.amoro.exception.AlreadyExistsException;
 import org.apache.amoro.exception.IllegalMetadataException;
 import org.apache.amoro.exception.ObjectNotExistsException;
 import org.apache.amoro.server.persistence.mapper.CatalogMetaMapper;
+import org.apache.amoro.server.persistence.mapper.ExpiredTableMapper;
 import org.apache.amoro.server.persistence.mapper.TableBlockerMapper;
 import org.apache.amoro.server.persistence.mapper.TableMetaMapper;
+import org.apache.amoro.server.table.ExpiredTable;
 import org.apache.amoro.server.table.TableMetadata;
 import org.apache.amoro.server.table.internal.InternalTableCreator;
 import org.apache.amoro.server.table.internal.InternalTableHandler;
@@ -153,6 +155,17 @@ public abstract class InternalCatalog extends ServerCatalog {
       throw new ObjectNotExistsException(getTableDesc(databaseName, tableName));
     }
     doAsTransaction(
+        () ->
+            doAs(
+                ExpiredTableMapper.class,
+                mapper ->
+                    mapper.upsertExpiredTable(
+                        new ExpiredTable(
+                            tableIdentifier.getId(),
+                            getMetadata().getCatalogName(),
+                            databaseName,
+                            tableName,
+                            0))),
         () ->
             doAsExisted(
                 TableMetaMapper.class,

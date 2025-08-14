@@ -75,6 +75,40 @@ CREATE TABLE table_identifier (
     CONSTRAINT table_name_idx UNIQUE (catalog_name, db_name, table_name)
 );
 
+CREATE TABLE expired_table (
+    table_id        BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1, INCREMENT BY 1),
+    catalog_name    varchar(64) NOT NULL,
+    db_name         varchar(128) NOT NULL,
+    table_name      varchar(256) NOT NULL,
+    status          int  NOT NULL,
+    CONSTRAINT tbl_id PRIMARY KEY (table_id)
+);
+
+CREATE TABLE partition_metadata (
+    part_id         BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY (START WITH 1, INCREMENT BY 1),
+    table_id        BIGINT NOT NULL,
+    catalog_name    varchar(128) NOT NULL,
+    db_name         varchar(128) NOT NULL,
+    table_name      varchar(256) NOT NULL,
+    part_name       varchar(767) NOT NULL,
+    part_name_uniq  varchar(256) NOT NULL,
+    part_location   varchar(4000) NOT NULL,
+    snapshot_id     varchar(128) NOT NULL,
+    properties      varchar(4000) NOT NULL,
+    total_records   BIGINT NOT NULL,
+    total_files     BIGINT NOT NULL,
+    total_data_bytes  BIGINT NOT NULL,
+    delete_records  BIGINT NOT NULL,
+    delete_files    BIGINT NOT NULL,
+    delete_data_bytes BIGINT NOT NULL,
+    creator         varchar(128) DEFAULT NULL,
+    create_time     BIGINT DEFAULT NULL,
+    modifier        varchar(128) DEFAULT NULL,
+    modify_time     BIGINT DEFAULT NULL,
+    CONSTRAINT partition_id PRIMARY KEY (part_id),
+    CONSTRAINT uniq_part UNIQUE (catalog_name, db_name, table_name, part_name_uniq)
+);
+
 CREATE TABLE table_metadata (
     table_id         BIGINT NOT NULL,
     catalog_name     VARCHAR(256) NOT NULL,

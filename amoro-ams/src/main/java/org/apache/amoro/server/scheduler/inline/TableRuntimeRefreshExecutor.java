@@ -27,6 +27,7 @@ import org.apache.amoro.server.optimizing.OptimizingProcess;
 import org.apache.amoro.server.scheduler.PeriodicTableScheduler;
 import org.apache.amoro.server.table.DefaultOptimizingState;
 import org.apache.amoro.server.table.DefaultTableRuntime;
+import org.apache.amoro.server.table.PartitionManager;
 import org.apache.amoro.server.table.TableService;
 import org.apache.amoro.server.utils.IcebergTableUtil;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
@@ -61,7 +62,8 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
         interval);
   }
 
-  private void tryEvaluatingPendingInput(DefaultTableRuntime tableRuntime, MixedTable table) {
+  public AbstractOptimizingEvaluator tryEvaluatingPendingInput(
+      DefaultTableRuntime tableRuntime, MixedTable table) {
     DefaultOptimizingState optimizingState = tableRuntime.getOptimizingState();
     if (optimizingState.isOptimizingEnabled()
         && !optimizingState.getOptimizingStatus().isProcessing()) {
@@ -79,7 +81,9 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
         optimizingState.optimizingNotNecessary();
       }
       optimizingState.setTableSummary(evaluator.getPendingInput());
+      return evaluator;
     }
+    return null;
   }
 
   @Override
@@ -119,7 +123,9 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
                   || lastOptimizedChangeSnapshotId != optimizingState.getCurrentChangeSnapshotId()))
           || (mixedTable.isUnkeyedTable()
               && lastOptimizedSnapshotId != optimizingState.getCurrentSnapshotId())) {
-        tryEvaluatingPendingInput(defaultTableRuntime, mixedTable);
+        AbstractOptimizingEvaluator evaluator =
+            tryEvaluatingPendingInput(defaultTableRuntime, mixedTable);
+        PartitionManager.refreshPartitions(table, tableRuntime, evaluator);
       }
     } catch (Throwable throwable) {
       logger.error("Refreshing table {} failed.", tableRuntime.getTableIdentifier(), throwable);

@@ -176,6 +176,14 @@ public abstract class AbstractOptimizingEvaluator {
     return new PendingInput(needOptimizingPlanMap.values());
   }
 
+  public boolean isInitialized() {
+    return isInitialized;
+  }
+
+  public Map<String, PartitionEvaluator> getPartitionPlanMap() {
+    return partitionPlanMap;
+  }
+
   public static class PendingInput {
 
     @JsonIgnore private final Map<Integer, Set<StructLike>> partitions = Maps.newHashMap();

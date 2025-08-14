@@ -48,6 +48,7 @@ import org.apache.amoro.server.resource.OptimizerManager;
 import org.apache.amoro.server.scheduler.inline.InlineTableExecutors;
 import org.apache.amoro.server.table.DefaultTableManager;
 import org.apache.amoro.server.table.DefaultTableService;
+import org.apache.amoro.server.table.PartitionManager;
 import org.apache.amoro.server.table.RuntimeHandlerChain;
 import org.apache.amoro.server.table.TableManager;
 import org.apache.amoro.server.table.TableService;
@@ -192,6 +193,12 @@ public class AmoroServiceContainer {
 
     initThriftService();
     startThriftService();
+
+    initHttpService();
+    startHttpService();
+    registerAmsServiceMetric();
+
+    PartitionManager.init(serviceConfig);
   }
 
   private void addHandlerChain(RuntimeHandlerChain chain) {
@@ -238,6 +245,8 @@ public class AmoroServiceContainer {
     if (amsServiceMetrics != null) {
       amsServiceMetrics.unregister();
     }
+
+    PartitionManager.dispose();
 
     EventsManager.dispose();
     MetricManager.dispose();

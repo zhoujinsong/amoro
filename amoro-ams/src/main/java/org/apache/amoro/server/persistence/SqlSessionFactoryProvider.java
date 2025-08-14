@@ -26,8 +26,10 @@ import com.github.pagehelper.dialect.helper.PostgreSqlDialect;
 import com.github.pagehelper.dialect.helper.SqlServer2012Dialect;
 import org.apache.amoro.server.persistence.mapper.ApiTokensMapper;
 import org.apache.amoro.server.persistence.mapper.CatalogMetaMapper;
+import org.apache.amoro.server.persistence.mapper.ExpiredTableMapper;
 import org.apache.amoro.server.persistence.mapper.OptimizerMapper;
 import org.apache.amoro.server.persistence.mapper.OptimizingProcessMapper;
+import org.apache.amoro.server.persistence.mapper.PartitionMetaMapper;
 import org.apache.amoro.server.persistence.mapper.PlatformFileMapper;
 import org.apache.amoro.server.persistence.mapper.ResourceMapper;
 import org.apache.amoro.server.persistence.mapper.TableBlockerMapper;
@@ -72,6 +74,8 @@ public class SqlSessionFactoryProvider {
     configuration.addMapper(ResourceMapper.class);
     configuration.addMapper(TableBlockerMapper.class);
     configuration.addMapper(TableProcessMapper.class);
+    configuration.addMapper(ExpiredTableMapper.class);
+    configuration.addMapper(PartitionMetaMapper.class);
 
     PageInterceptor interceptor = new PageInterceptor();
     Properties interceptorProperties = new Properties();

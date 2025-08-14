@@ -189,6 +189,7 @@ public class DefaultOptimizingState extends StatedPersistentBase implements Proc
     try {
       doAsTransaction(
           () -> Optional.ofNullable(optimizingProcess).ifPresent(OptimizingProcess::close),
+          () -> PartitionManager.deleteExpiredPartitionByTable(tableRuntime),
           () ->
               doAs(
                   TableMetaMapper.class,

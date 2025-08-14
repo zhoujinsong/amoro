@@ -473,6 +473,18 @@ public class AmoroManagementConf {
           .defaultValue(Duration.ofDays(1))
           .withDescription("Execute interval for data expiration");
 
+  public static final ConfigOption<Boolean> PARTITION_PERSIST_ENABLED =
+      ConfigOptions.key("partition.persist.enabled")
+          .booleanType()
+          .defaultValue(Boolean.FALSE)
+          .withDescription("Enable persist partition");
+
+  public static final ConfigOption<Integer> PARTITION_PERSIST_BATCH_SIZE =
+      ConfigOptions.key("partition.persist.batch-size")
+          .intType()
+          .defaultValue(200)
+          .withDescription("The max records to persist partition");
+
   public static final String SYSTEM_CONFIG = "ams";
 
   public static final String CATALOG_CORE_SITE = "core-site";

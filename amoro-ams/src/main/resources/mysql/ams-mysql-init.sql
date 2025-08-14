@@ -84,6 +84,43 @@ CREATE TABLE `table_identifier`
     UNIQUE KEY `table_name_index` (`catalog_name`,`db_name`,`table_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'Table identifier for AMS' ROW_FORMAT=DYNAMIC;
 
+CREATE TABLE `expired_table`
+(
+    `table_id`        bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'Auto increment id',
+    `catalog_name`    varchar(64) NOT NULL COMMENT 'Catalog name',
+    `db_name`         varchar(128) NOT NULL COMMENT 'Database name',
+    `table_name`      varchar(256) NOT NULL COMMENT 'Table name',
+    `status`          int(1)  NOT NULL COMMENT '0: WAITING, 1: PROCESSING, 2: FINISHED',
+    PRIMARY KEY (`table_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'The expired table';
+
+CREATE TABLE `partition_metadata`
+(
+    `part_id`         bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'Auto increment id',
+    `table_id`        bigint(20) NOT NULL COMMENT 'table id',
+    `catalog_name`    varchar(128) NOT NULL COMMENT 'Catalog name',
+    `db_name`         varchar(128) NOT NULL COMMENT 'Database name',
+    `table_name`      varchar(256) NOT NULL COMMENT 'Table name',
+    `part_name`       varchar(767) NOT NULL COMMENT 'Partition name',
+    `part_name_uniq`  varchar(256) NOT NULL COMMENT 'part_name.length <= 256 ? part_name : part_name.substring(0, 224) + md5(part_name) with 32 bits',
+    `part_location`   varchar(4000) NOT NULL COMMENT 'Partition location',
+    `snapshot_id`     varchar(128) NOT NULL COMMENT 'snapshot id',
+    `properties`      MEDIUMTEXT DEFAULT NULL COMMENT 'Partition properties',
+    `total_records`   bigint(20) NOT NULL COMMENT 'the total records count',
+    `total_files`     bigint(20) NOT NULL COMMENT 'the total files count',
+    `total_data_bytes`  bigint(20) NOT NULL COMMENT 'the data size with unit byte',
+    `delete_records`  bigint(20) NOT NULL COMMENT 'the deleted records count',
+    `delete_files`    bigint(20) NOT NULL COMMENT 'the deleted files count',
+    `delete_data_bytes` bigint(20) NOT NULL COMMENT 'the deleted data size with unit byte',
+    `creator`         varchar(128) DEFAULT NULL COMMENT 'Create user name',
+    `create_time`     bigint(20) DEFAULT NULL COMMENT 'Create time with unit millisecond',
+    `modifier`        varchar(128) DEFAULT NULL COMMENT 'Modify user name',
+    `modify_time`     bigint(20) DEFAULT NULL COMMENT 'Modify time with unit millisecond',
+    PRIMARY KEY (`part_id`),
+    UNIQUE KEY `uniq_part` (`catalog_name`, `db_name`, `table_name`, `part_name_uniq`),
+    INDEX `idx_snapshot` (`table_id`, `snapshot_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'Partition metadata';
+
 CREATE TABLE `table_metadata`
 (
     `table_id`        bigint(20) NOT NULL COMMENT 'table id',
