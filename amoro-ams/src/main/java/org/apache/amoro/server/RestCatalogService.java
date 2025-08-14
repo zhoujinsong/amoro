@@ -34,7 +34,6 @@ import io.javalin.http.ContentType;
 import io.javalin.http.Context;
 import io.javalin.http.HttpCode;
 import io.javalin.plugin.json.JavalinJackson;
-import org.apache.amoro.ServerTableIdentifier;
 import org.apache.amoro.TableFormat;
 import org.apache.amoro.events.IcebergReportEvent;
 import org.apache.amoro.exception.ObjectNotExistsException;
