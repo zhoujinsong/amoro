@@ -40,6 +40,7 @@ import org.apache.amoro.events.IcebergReportEvent;
 import org.apache.amoro.exception.ObjectNotExistsException;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.server.catalog.CatalogManager;
+import org.apache.amoro.server.catalog.ExternalCatalog;
 import org.apache.amoro.server.catalog.InternalCatalog;
 import org.apache.amoro.server.catalog.ServerCatalog;
 import org.apache.amoro.server.manager.EventsManager;
@@ -366,22 +367,18 @@ public class RestCatalogService extends PersistentBase {
 
   /** POST PREFIX/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/metrics */
   public void reportMetrics(Context ctx) {
-    handleTable(
-        ctx,
-        handler -> {
-          String bodyJson = ctx.body();
-          ReportMetricsRequest metricsRequest = ReportMetricsRequestParser.fromJson(bodyJson);
-          ServerTableIdentifier identifier = handler.tableMetadata().getTableIdentifier();
-          IcebergReportEvent event =
-              new IcebergReportEvent(
-                  identifier.getCatalog(),
-                  identifier.getDatabase(),
-                  identifier.getTableName(),
-                  false,
-                  metricsRequest.report());
-          EventsManager.getInstance().emit(event);
-          return null;
-        });
+    String catalog = ctx.pathParam("catalog");
+    ServerCatalog serverCatalog = catalogManager.getServerCatalog(catalog);
+    String bodyJson = ctx.body();
+    ReportMetricsRequest metricsRequest = ReportMetricsRequestParser.fromJson(bodyJson);
+    IcebergReportEvent event =
+        new IcebergReportEvent(
+            ctx.pathParam("catalog"),
+            ctx.pathParam("namespace"),
+            ctx.pathParam("table"),
+            serverCatalog instanceof ExternalCatalog,
+            metricsRequest.report());
+    EventsManager.getInstance().emit(event);
   }
 
   private <T> T bodyAsClass(Context ctx, Class<T> clz) {
