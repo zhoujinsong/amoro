@@ -34,8 +34,8 @@ import org.apache.amoro.server.persistence.PersistentBase;
 import org.apache.amoro.server.persistence.TableRuntimeMeta;
 import org.apache.amoro.server.persistence.mapper.CatalogMetaMapper;
 import org.apache.amoro.server.persistence.mapper.OptimizerMapper;
-import org.apache.amoro.server.persistence.mapper.OptimizingMapper;
 import org.apache.amoro.server.persistence.mapper.TableMetaMapper;
+import org.apache.amoro.server.persistence.mapper.TableProcessMapper;
 import org.apache.amoro.server.resource.OptimizerInstance;
 import org.apache.amoro.shade.guava32.com.google.common.annotations.VisibleForTesting;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableList;
@@ -283,8 +283,8 @@ public class OverviewManager extends PersistentBase {
     Timestamp endTimestamp = new Timestamp(endTime);
     List<String> optimizingSummaries =
         getAs(
-            OptimizingMapper.class,
-            mapper -> mapper.selectProcessesMetrics(catalog, status, startTimestamp, endTimestamp));
+            TableProcessMapper.class,
+            mapper -> mapper.listProcessesMetrics(catalog, status, startTimestamp, endTimestamp));
     for (String optimizingSummary : optimizingSummaries) {
       MetricsSummary summary = JacksonUtil.parseObject(optimizingSummary, MetricsSummary.class);
       if (summary != null) {

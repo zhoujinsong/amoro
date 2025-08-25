@@ -36,14 +36,14 @@ import org.apache.amoro.exception.TaskNotFoundException;
 import org.apache.amoro.resource.ResourceGroup;
 import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.optimizing.OptimizingProcess;
-import org.apache.amoro.server.optimizing.OptimizingProcessMeta;
 import org.apache.amoro.server.optimizing.OptimizingQueue;
 import org.apache.amoro.server.optimizing.OptimizingStatus;
 import org.apache.amoro.server.optimizing.TaskRuntime;
 import org.apache.amoro.server.persistence.StatedPersistentBase;
 import org.apache.amoro.server.persistence.mapper.OptimizerMapper;
-import org.apache.amoro.server.persistence.mapper.OptimizingMapper;
 import org.apache.amoro.server.persistence.mapper.ResourceMapper;
+import org.apache.amoro.server.persistence.mapper.TableProcessMapper;
+import org.apache.amoro.server.process.TableProcessMeta;
 import org.apache.amoro.server.resource.OptimizerInstance;
 import org.apache.amoro.server.resource.OptimizerManager;
 import org.apache.amoro.server.resource.OptimizerThread;
@@ -96,6 +96,7 @@ public class DefaultOptimizingService extends StatedPersistentBase
   private final long taskExecuteTimeout;
   private final int maxPlanningParallelism;
   private final long pollingTimeout;
+  private final boolean breakQuotaLimit;
   private final long refreshGroupInterval;
   private final Map<String, OptimizingQueue> optimizingQueueByGroup = new ConcurrentHashMap<>();
   private final Map<String, OptimizingQueue> optimizingQueueByToken = new ConcurrentHashMap<>();
@@ -125,6 +126,8 @@ public class DefaultOptimizingService extends StatedPersistentBase
         serviceConfig.getInteger(AmoroManagementConf.OPTIMIZER_MAX_PLANNING_PARALLELISM);
     this.pollingTimeout =
         serviceConfig.get(AmoroManagementConf.OPTIMIZER_POLLING_TIMEOUT).toMillis();
+    this.breakQuotaLimit =
+        serviceConfig.getBoolean(AmoroManagementConf.OPTIMIZING_BREAK_QUOTA_LIMIT_ENABLED);
     this.tableService = tableService;
     this.catalogManager = catalogManager;
     this.optimizerManager = optimizerManager;
@@ -215,7 +218,7 @@ public class DefaultOptimizingService extends StatedPersistentBase
   public OptimizingTask pollTask(String authToken, int threadId) {
     LOG.debug("Optimizer {} (threadId {}) try polling task", authToken, threadId);
     OptimizingQueue queue = getQueueByToken(authToken);
-    return Optional.ofNullable(queue.pollTask(pollingTimeout))
+    return Optional.ofNullable(queue.pollTask(pollingTimeout, breakQuotaLimit))
         .map(task -> extractOptimizingTask(task, authToken, threadId, queue))
         .orElse(null);
   }
@@ -285,8 +288,8 @@ public class DefaultOptimizingService extends StatedPersistentBase
 
   @Override
   public boolean cancelProcess(long processId) throws TException {
-    OptimizingProcessMeta processMeta =
-        getAs(OptimizingMapper.class, m -> m.getOptimizingProcess(processId));
+    TableProcessMeta processMeta =
+        getAs(TableProcessMapper.class, m -> m.getProcessMeta(processId));
     if (processMeta == null) {
       return false;
     }
