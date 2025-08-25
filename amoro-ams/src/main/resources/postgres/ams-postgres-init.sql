@@ -215,45 +215,54 @@ COMMENT ON COLUMN table_runtime.pending_input IS 'Pending input data';
 COMMENT ON COLUMN table_runtime.table_summary IS 'Table summary data';
 CREATE INDEX idx_optimizer_status_and_time ON table_runtime(optimizing_status_code, optimizing_status_start_time DESC);
 
-CREATE TABLE table_optimizing_process
-(
-    process_id BIGINT NOT NULL,
-    table_id BIGINT NOT NULL,
-    catalog_name VARCHAR(64) NOT NULL,
-    db_name VARCHAR(128) NOT NULL,
-    table_name VARCHAR(256) NOT NULL,
-    target_snapshot_id BIGINT NOT NULL,
-    target_change_snapshot_id BIGINT NOT NULL,
-    status VARCHAR(10) NOT NULL,
-    optimizing_type VARCHAR(10) NOT NULL,
-    plan_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    end_time TIMESTAMP,
-    fail_reason VARCHAR(4096),
-    rewrite_input BYTEA,
-    summary TEXT,
-    from_sequence TEXT,
-    to_sequence TEXT,
-    PRIMARY KEY (process_id)
+CREATE TABLE table_process (
+    process_id      bigserial PRIMARY KEY,
+    table_id        bigint NOT NULL,
+    status          varchar(64) NOT NULL,
+    process_type    varchar(64) NOT NULL,
+    process_stage   varchar(64) NOT NULL,
+    execution_engine varchar(64) NOT NULL,
+    create_time     timestamptz NOT NULL DEFAULT now(),
+    finish_time     timestamptz,
+    fail_message    text CHECK (length(fail_message) <= 4096),
+    summary         text,
+    CONSTRAINT table_process_unique UNIQUE (process_id)
 );
-CREATE INDEX process_index ON table_optimizing_process (table_id, plan_time);
 
-COMMENT ON TABLE table_optimizing_process IS 'History of optimizing after each commit';
-COMMENT ON COLUMN table_optimizing_process.process_id IS 'Optimizing procedure UUID';
-COMMENT ON COLUMN table_optimizing_process.table_id IS 'Table ID';
-COMMENT ON COLUMN table_optimizing_process.catalog_name IS 'Catalog name';
-COMMENT ON COLUMN table_optimizing_process.db_name IS 'Database name';
-COMMENT ON COLUMN table_optimizing_process.table_name IS 'Table name';
-COMMENT ON COLUMN table_optimizing_process.target_snapshot_id IS 'Target snapshot ID';
-COMMENT ON COLUMN table_optimizing_process.target_change_snapshot_id IS 'Target change snapshot ID';
-COMMENT ON COLUMN table_optimizing_process.status IS 'Optimizing status';
-COMMENT ON COLUMN table_optimizing_process.optimizing_type IS 'Optimizing type: Major, Minor';
-COMMENT ON COLUMN table_optimizing_process.plan_time IS 'Plan time';
-COMMENT ON COLUMN table_optimizing_process.end_time IS 'Finish time or failed time';
-COMMENT ON COLUMN table_optimizing_process.fail_reason IS 'Error message after task failure';
-COMMENT ON COLUMN table_optimizing_process.rewrite_input IS 'Rewrite input files';
-COMMENT ON COLUMN table_optimizing_process.summary IS 'Summary of optimizing tasks';
-COMMENT ON COLUMN table_optimizing_process.from_sequence IS 'From or min sequence of each partition';
-COMMENT ON COLUMN table_optimizing_process.to_sequence IS 'To or max sequence of each partition';
+CREATE INDEX table_process_table_idx ON table_process (table_id, create_time);
+
+COMMENT ON TABLE  table_process IS 'History of optimizing after each commit';
+COMMENT ON COLUMN table_process.process_id      IS 'table process id';
+COMMENT ON COLUMN table_process.table_id        IS 'table id';
+COMMENT ON COLUMN table_process.status          IS 'Table optimizing status';
+COMMENT ON COLUMN table_process.process_type    IS 'Process action type';
+COMMENT ON COLUMN table_process.process_stage   IS 'Process current stage';
+COMMENT ON COLUMN table_process.execution_engine IS 'Execution engine';
+COMMENT ON COLUMN table_process.create_time     IS 'First plan time';
+COMMENT ON COLUMN table_process.finish_time     IS 'finish time or failed time';
+COMMENT ON COLUMN table_process.fail_message    IS 'Error message after task failed';
+COMMENT ON COLUMN table_process.summary         IS 'Max change transaction id of these tasks';
+
+CREATE TABLE optimizing_process_state (
+    process_id                bigint PRIMARY KEY,
+    table_id                  bigint NOT NULL,
+    target_snapshot_id        bigint NOT NULL,
+    target_change_snapshot_id bigint NOT NULL,
+    rewrite_input             bytea,
+    from_sequence             text,
+    to_sequence               text
+);
+
+CREATE INDEX optimizing_process_state_table_idx ON optimizing_process_state (table_id);
+
+COMMENT ON TABLE  optimizing_process_state IS 'History of optimizing after each commit';
+COMMENT ON COLUMN optimizing_process_state.process_id                IS 'optimizing_procedure UUID';
+COMMENT ON COLUMN optimizing_process_state.table_id                  IS 'table id';
+COMMENT ON COLUMN optimizing_process_state.target_snapshot_id        IS 'target snapshot id';
+COMMENT ON COLUMN optimizing_process_state.target_change_snapshot_id IS 'target change snapshot id';
+COMMENT ON COLUMN optimizing_process_state.rewrite_input             IS 'rewrite files input';
+COMMENT ON COLUMN optimizing_process_state.from_sequence             IS 'from or min sequence of each partition';
+COMMENT ON COLUMN optimizing_process_state.to_sequence               IS 'to or max sequence of each partition';
 
 CREATE TABLE task_runtime
 (
@@ -275,7 +284,7 @@ CREATE TABLE task_runtime
     properties TEXT,
     PRIMARY KEY (process_id, task_id)
 );
-CREATE INDEX task_runtime_index ON table_optimizing_process (table_id, process_id);
+CREATE INDEX task_runtime_index ON task_runtime (table_id, process_id);
 
 COMMENT ON TABLE task_runtime IS 'Optimize task basic information';
 COMMENT ON COLUMN task_runtime.process_id IS 'Process ID';
@@ -295,6 +304,32 @@ COMMENT ON COLUMN task_runtime.rewrite_output IS 'Rewrite files output';
 COMMENT ON COLUMN task_runtime.metrics_summary IS 'Metrics summary';
 COMMENT ON COLUMN task_runtime.properties IS 'Task properties';
 
+CREATE TABLE table_process_state
+(
+     process_id   BIGINT NOT NULL,
+     action       VARCHAR(16) NOT NULL,
+     table_id     BIGINT NOT NULL,
+     retry_num    INT DEFAULT NULL,
+     status       VARCHAR(10) NOT NULL,
+     start_time   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+     end_time     TIMESTAMP DEFAULT NULL,
+     fail_reason  VARCHAR(4096) DEFAULT NULL,
+     summary      TEXT,
+     PRIMARY KEY (process_id)
+);
+CREATE INDEX table_process_state_index ON table_process_state (table_id, start_time);
+
+COMMENT ON TABLE table_process_state IS 'History of optimizing after each commit';
+
+COMMENT ON COLUMN table_process_state.process_id IS 'optimizing_procedure UUID';
+COMMENT ON COLUMN table_process_state.action IS 'process action';
+COMMENT ON COLUMN table_process_state.retry_num IS 'Retry times';
+COMMENT ON COLUMN table_process_state.status IS 'Direct to TableOptimizingStatus';
+COMMENT ON COLUMN table_process_state.start_time IS 'First plan time';
+COMMENT ON COLUMN table_process_state.end_time IS 'finish time or failed time';
+COMMENT ON COLUMN table_process_state.fail_reason IS 'Error message after task failed';
+COMMENT ON COLUMN table_process_state.summary IS 'state summary, usually a map';
+
 CREATE TABLE optimizing_task_quota
 (
     process_id BIGINT NOT NULL,
@@ -306,7 +341,7 @@ CREATE TABLE optimizing_task_quota
     fail_reason VARCHAR(4096),
     PRIMARY KEY (process_id, task_id, retry_num)
 );
-CREATE INDEX quota_index ON table_optimizing_process (table_id);
+CREATE INDEX quota_index ON optimizing_task_quota (table_id);
 
 COMMENT ON TABLE optimizing_task_quota IS 'Optimize task basic information';
 COMMENT ON COLUMN optimizing_task_quota.process_id IS 'Optimizing procedure UUID';
