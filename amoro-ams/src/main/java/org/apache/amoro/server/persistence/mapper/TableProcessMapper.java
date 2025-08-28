@@ -122,8 +122,8 @@ public interface TableProcessMapper {
           + "FROM table_process WHERE table_id = #{tableId} "
           + " <if test='processType != null'> AND process_type = #{processType}</if>"
           + " <if test='status != null'> AND status = #{status}</if>"
-          + " <if test='beginTime != null'> AND a.plan_time &gt; #{beginTime}</if>"
-          + " <if test='endTime != null'> AND a.plan_time &lt; #{endTime}</if>"
+          + " <if test='beginTime != null'> AND create_time &gt; #{beginTime}</if>"
+          + " <if test='endTime != null'> AND finish_time &lt; #{endTime}</if>"
           + " ORDER BY process_id desc"
           + "</script>")
   @ResultMap("tableProcessMap")
