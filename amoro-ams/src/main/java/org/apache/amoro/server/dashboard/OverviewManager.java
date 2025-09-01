@@ -286,14 +286,13 @@ public class OverviewManager extends PersistentBase {
             TableProcessMapper.class,
             mapper -> mapper.listProcessesMetrics(catalog, status, startTimestamp, endTimestamp));
     for (String optimizingSummary : optimizingSummaries) {
-      MetricsSummary summary = JacksonUtil.parseObject(optimizingSummary, MetricsSummary.class);
-      if (summary != null) {
-        optimizingProcessCount++;
-        optimizingInputFileCount += summary.getInputFilesStatistics().getFileCnt();
-        optimizingInputDataSize += summary.getInputFilesStatistics().getTotalSize();
-        optimizingOutputFileCount += summary.getOutputFilesStatistics().getFileCnt();
-        optimizingOutputDataSize += summary.getOutputFilesStatistics().getTotalSize();
-      }
+      MetricsSummary summary =
+          MetricsSummary.fromMap(JacksonUtil.parseObject(optimizingSummary, Map.class));
+      optimizingProcessCount++;
+      optimizingInputFileCount += summary.getInputFilesStatistics().getFileCnt();
+      optimizingInputDataSize += summary.getInputFilesStatistics().getTotalSize();
+      optimizingOutputFileCount += summary.getOutputFilesStatistics().getFileCnt();
+      optimizingOutputDataSize += summary.getOutputFilesStatistics().getTotalSize();
     }
 
     return new OptimizingSummary(
