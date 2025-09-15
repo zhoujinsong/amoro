@@ -253,7 +253,7 @@
 
                 <dependency>
                     <groupId>com.tencent.cloud.tclake</groupId>
-                    <artifactId>iceberg-plugin</artifactId>
+                    <artifactId>tclake-iceberg-plugin</artifactId>
                     <version>${iceberg-plugin.version}</version>
                 </dependency>
             </dependencies>
