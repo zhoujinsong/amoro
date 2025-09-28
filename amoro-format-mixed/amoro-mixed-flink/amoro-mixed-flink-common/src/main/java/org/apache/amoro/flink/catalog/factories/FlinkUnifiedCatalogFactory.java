@@ -77,16 +77,16 @@ public class FlinkUnifiedCatalogFactory implements CatalogFactory {
         context
             .getOptions()
             .getOrDefault(CommonCatalogOptions.DEFAULT_DATABASE_KEY, MixedCatalog.DEFAULT_DB);
-    final String metastoreUrl = context.getOptions().get(CatalogFactoryOptions.AMS_URI.key());
+    final String metastoreUri = context.getOptions().get(CatalogFactoryOptions.AMS_URI.key());
     final Map<String, String> catalogProperties = getCatalogProperties(context.getOptions());
 
     UnifiedCatalog unifiedCatalog;
-    if (metastoreUrl != null) {
+    if (metastoreUri != null) {
       String amoroCatalogName =
-          AmsThriftUrl.parse(metastoreUrl, THRIFT_TABLE_SERVICE_NAME).catalogName();
+          AmsThriftUrl.parse(metastoreUri, THRIFT_TABLE_SERVICE_NAME).catalogName();
       unifiedCatalog =
           UnifiedCatalogLoader.loadUnifiedCatalog(
-              metastoreUrl, amoroCatalogName, catalogProperties);
+              metastoreUri, amoroCatalogName, catalogProperties);
     } else {
       String metastoreType = catalogProperties.get(FlinkCatalogFactory.ICEBERG_CATALOG_TYPE);
       Preconditions.checkArgument(metastoreType != null, "Catalog type cannot be empty");
@@ -104,9 +104,9 @@ public class FlinkUnifiedCatalogFactory implements CatalogFactory {
         CatalogUtil.tableFormats(unifiedCatalog.metastoreType(), unifiedCatalog.properties());
     validate(tableFormats);
 
-    return metastoreUrl != null
+    return metastoreUri != null
         ? new FlinkUnifiedCatalog(
-            metastoreUrl, defaultDatabase, unifiedCatalog, context, hadoopConf)
+            metastoreUri, defaultDatabase, unifiedCatalog, context, hadoopConf)
         : new FlinkUnifiedCatalog(defaultDatabase, unifiedCatalog, context, hadoopConf);
   }
 
