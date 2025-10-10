@@ -24,6 +24,8 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,7 @@ import java.util.stream.Stream;
 
 public class CommonUnifiedCatalog implements UnifiedCatalog {
 
+  private static final Logger LOG = LoggerFactory.getLogger(CommonUnifiedCatalog.class);
   private final String catalogName;
   private final String metaStoreType;
   private final Supplier<CatalogMeta> metaSupplier;
@@ -130,12 +133,15 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
             TableFormat.MIXED_HIVE,
             TableFormat.MIXED_ICEBERG,
             TableFormat.ICEBERG,
+            TableFormat.HIVE_V2,
             TableFormat.PAIMON,
             TableFormat.HUDI)
         .map(
             formatCatalog -> {
               try {
-                return formatCatalog.loadTable(database, table);
+                AmoroTable<?> amoroTable = formatCatalog.loadTable(database, table);
+                LOG.info(" {} loaded from {} ", amoroTable.name(), formatCatalog.getClass());
+                return amoroTable;
               } catch (NoSuchTableException e) {
                 return null;
               }
@@ -157,6 +163,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
           TableFormat.MIXED_HIVE,
           TableFormat.MIXED_ICEBERG,
           TableFormat.ICEBERG,
+          TableFormat.HIVE_V2,
           TableFormat.PAIMON,
           TableFormat.HUDI
         };

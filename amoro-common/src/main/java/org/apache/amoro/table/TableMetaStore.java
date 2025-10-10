@@ -128,6 +128,7 @@ public class TableMetaStore implements Serializable {
   private final boolean disableAuth;
   private final String accessKey;
   private final String secretKey;
+  private final int configurationHashCode;
 
   private transient RuntimeContext runtimeContext;
   private transient String authInformation;
@@ -166,6 +167,7 @@ public class TableMetaStore implements Serializable {
     this.disableAuth = disableAuth;
     this.accessKey = accessKey;
     this.secretKey = secretKey;
+    this.configurationHashCode = -1;
   }
 
   private TableMetaStore(Configuration configuration) {
@@ -180,6 +182,7 @@ public class TableMetaStore implements Serializable {
     this.krbPrincipal = null;
     this.accessKey = null;
     this.secretKey = null;
+    this.configurationHashCode = configuration.hashCode();
     getRuntimeContext().setConfiguration(configuration);
   }
 
@@ -325,6 +328,7 @@ public class TableMetaStore implements Serializable {
   @Override
   public int hashCode() {
     int result = Objects.hash(disableAuth, authMethod, hadoopUsername, krbPrincipal);
+    result = 31 * result + configurationHashCode;
     result = 31 * result + Arrays.hashCode(metaStoreSite);
     result = 31 * result + Arrays.hashCode(hdfsSite);
     result = 31 * result + Arrays.hashCode(coreSite);

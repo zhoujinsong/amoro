@@ -29,7 +29,10 @@ import org.apache.amoro.shade.jackson2.com.fasterxml.jackson.databind.Serializer
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Table formats Amoro supported
@@ -42,11 +45,24 @@ public final class TableFormat implements Serializable {
   /** Open-source table formats */
   public static final TableFormat ICEBERG = register("ICEBERG");
 
+  public static final TableFormat HIVE_V2 = register("HIVE_V2");
   public static final TableFormat MIXED_ICEBERG = register("MIXED_ICEBERG");
   public static final TableFormat MIXED_HIVE = register("MIXED_HIVE");
   public static final TableFormat PAIMON = register("PAIMON");
   public static final TableFormat HUDI = register("HUDI");
 
+  public static final Set<String> HIVE_V2_FILE_FORMATS =
+      new HashSet<>(
+          Arrays.asList(
+              "SEQUENCEFILE",
+              "RCFILE",
+              "ORC",
+              "PARQUET",
+              "TEXTFILE",
+              "HIVE",
+              "JSON",
+              "CSV",
+              "AVRO"));
   /**
    * Get all registered formats
    *
@@ -74,6 +90,10 @@ public final class TableFormat implements Serializable {
    */
   public static TableFormat valueOf(String name) {
     return registeredFormats.get(name);
+  }
+
+  public static Boolean isHiveFileFormats(String name) {
+    return HIVE_V2_FILE_FORMATS.contains(name);
   }
 
   private final String name;

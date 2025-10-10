@@ -31,6 +31,8 @@ import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Optional;
+
 /**
  * Extended implementation of {@link ClientPoolImpl} with {@link TableMetaStore} to support
  * authenticated hive cluster.
@@ -79,9 +81,15 @@ public class AuthenticatedHiveClientPool extends ClientPoolImpl<HMSClient, TExce
   }
 
   public AuthenticatedHiveClientPool(TableMetaStore tableMetaStore, int poolSize) {
+    this(tableMetaStore, poolSize, Optional.empty());
+  }
+
+  public AuthenticatedHiveClientPool(
+      TableMetaStore tableMetaStore, int poolSize, Optional<ClassLoader> classLoader) {
     super(poolSize, TTransportException.class, true);
     this.hiveConf =
         new HiveConf(tableMetaStore.getConfiguration(), AuthenticatedHiveClientPool.class);
+    classLoader.ifPresent(this.hiveConf::setClassLoader);
     this.hiveConf.addResource(tableMetaStore.getConfiguration());
     if (tableMetaStore.getHiveSiteLocation().isPresent()) {
       this.hiveConf.addResource(tableMetaStore.getHiveSiteLocation().get());

@@ -61,6 +61,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
 
 /** Unified catalog implement for spark engine. */
@@ -69,12 +70,15 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   private static final Logger LOG = LoggerFactory.getLogger(SparkUnifiedCatalogBase.class);
 
   public static final String CATALOG_REGISTER_NAME = "register-name";
+  public static final String SPARK_HIVE_STORED_AS = "hive.stored-as";
   private static final Map<TableFormat, String> defaultTableCatalogImplMap =
       ImmutableMap.of(
           TableFormat.ICEBERG, "org.apache.iceberg.spark.SparkCatalog",
+          TableFormat.HIVE_V2, "org.apache.kyuubi.spark.connector.hive.HiveTableCatalog",
           TableFormat.MIXED_HIVE, "org.apache.amoro.spark.MixedFormatSparkCatalog",
           TableFormat.MIXED_ICEBERG, "org.apache.amoro.spark.MixedFormatSparkCatalog",
           TableFormat.PAIMON, "org.apache.paimon.spark.SparkCatalog");
+  private static final String[] DEFAULT_NAMESPACE = new String[] {"default"};
 
   private UnifiedCatalog unifiedCatalog;
   private String name;
@@ -250,11 +254,16 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   public Table createTable(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws TableAlreadyExistsException, NoSuchNamespaceException {
-    String provider = properties.get(PROP_PROVIDER);
-    if (StringUtils.isBlank(provider)) {
-      throw new IllegalArgumentException("table provider is required.");
+    String storeAs = properties.get(SPARK_HIVE_STORED_AS);
+    String provider = properties.getOrDefault(PROP_PROVIDER, TableFormat.ICEBERG.name());
+    String fileFormat = Optional.ofNullable(storeAs).orElse(provider);
+    TableFormat format = TableFormat.valueOf(fileFormat.toUpperCase());
+    if (format == null && TableFormat.isHiveFileFormats(fileFormat.toUpperCase())) {
+      format = TableFormat.HIVE_V2;
     }
-    TableFormat format = TableFormat.valueOf(provider.toUpperCase());
+    if (format == null) {
+      throw new IllegalArgumentException("table file format {" + format + "} is not supported.");
+    }
     TableCatalog catalog = tableCatalog(format);
     return catalog.createTable(ident, schema, partitions, properties);
   }
@@ -360,5 +369,10 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
           "Failed to find public no-arg constructor for format: " + format.name() + " : " + impl,
           e);
     }
+  }
+
+  @Override
+  public String[] defaultNamespace() {
+    return DEFAULT_NAMESPACE;
   }
 }
