@@ -19,6 +19,8 @@
 package org.apache.amoro.utils;
 
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -32,10 +34,12 @@ public class HiveUtil {
 
   private static final Logger LOG = LoggerFactory.getLogger(HiveUtil.class);
 
-  public static Database constructHiveDatabase(String databaseName, Map<String, String> meta) {
+  public static Database constructHiveDatabase(
+      String databaseName, Map<String, String> meta, Configuration conf) {
     Database database = new Database();
     Map<String, String> parameter = Maps.newHashMap();
     database.setName(databaseName);
+    database.setLocationUri(databaseLocation(conf, databaseName));
     meta.forEach(
         (key, value) -> {
           if (key.equals("comment")) {
@@ -57,6 +61,12 @@ public class HiveUtil {
 
     database.setParameters(parameter);
     return database;
+  }
+
+  private static String databaseLocation(Configuration conf, String databaseName) {
+    String warehouseLocation = conf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname);
+    warehouseLocation = LocationUtil.stripTrailingSlash(warehouseLocation);
+    return String.format("%s/%s.db", warehouseLocation, databaseName);
   }
 
   public static String currentUser() {

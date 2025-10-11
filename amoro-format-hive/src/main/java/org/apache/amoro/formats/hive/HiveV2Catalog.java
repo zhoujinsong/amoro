@@ -110,7 +110,8 @@ public class HiveV2Catalog implements FormatCatalog {
     try {
       hiveClientPool.run(
           client -> {
-            client.createDatabase(HiveUtil.constructHiveDatabase(database, metadata));
+            client.createDatabase(
+                HiveUtil.constructHiveDatabase(database, metadata, metaStore.getConfiguration()));
             return null;
           });
     } catch (AlreadyExistsException e) {
