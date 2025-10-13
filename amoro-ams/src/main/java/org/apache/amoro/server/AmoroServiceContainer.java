@@ -134,6 +134,7 @@ public class AmoroServiceContainer {
           service.waitFollowerShip();
         } catch (Exception e) {
           LOG.error("AMS start error", e);
+          System.exit(1);
         } finally {
           service.disposeOptimizingService();
         }

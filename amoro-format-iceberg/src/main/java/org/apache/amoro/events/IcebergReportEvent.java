@@ -20,6 +20,8 @@ package org.apache.amoro.events;
 
 import org.apache.iceberg.metrics.MetricsReport;
 
+import java.util.Map;
+
 /** An event triggered when iceberg report metrics */
 public class IcebergReportEvent implements TableEvent {
   private final MetricsReport report;
@@ -28,15 +30,22 @@ public class IcebergReportEvent implements TableEvent {
   private final String database;
   private final String table;
   private final boolean external;
+  private final Map<String, Object> options;
 
   public IcebergReportEvent(
-      String catalog, String database, String table, boolean external, MetricsReport report) {
+      String catalog,
+      String database,
+      String table,
+      boolean external,
+      Map<String, Object> options,
+      MetricsReport report) {
     this.report = report;
     this.timestamp = System.currentTimeMillis();
     this.catalog = catalog;
     this.database = database;
     this.table = table;
     this.external = external;
+    this.options = options;
   }
 
   @Override
@@ -67,6 +76,11 @@ public class IcebergReportEvent implements TableEvent {
   @Override
   public boolean isExternal() {
     return external;
+  }
+
+  @Override
+  public Map<String, Object> options() {
+    return options;
   }
 
   /**
