@@ -237,6 +237,22 @@
 
         <dependency>
             <groupId>org.apache.amoro</groupId>
+            <artifactId>amoro-format-hive</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.amoro</groupId>
             <artifactId>amoro-format-mixed-spark-3-common</artifactId>
             <version>${project.version}</version>
         </dependency>

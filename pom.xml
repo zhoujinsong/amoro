@@ -56,6 +56,7 @@
         <module>amoro-format-hudi</module>
         <module>amoro-format-paimon</module>
         <module>dist</module>
+        <module>amoro-format-hive</module>
     </modules>
 
     <scm>
@@ -137,6 +138,7 @@
         <netty.version>4.1.118.Final</netty.version>
         <javalin.version>4.6.8</javalin.version>
         <kyuubi-hive-jdbc-shaded.version>1.6.0-incubating</kyuubi-hive-jdbc-shaded.version>
+        <kyuubi-hive-connector.version>1.11.0-SNAPSHOT</kyuubi-hive-connector.version>
         <rocksdb.version>7.10.2</rocksdb.version>
         <kryo.version>4.0.3</kryo.version>
         <trino.version>406</trino.version>
@@ -712,6 +714,12 @@
                 <groupId>org.apache.kyuubi</groupId>
                 <artifactId>kyuubi-hive-jdbc-shaded</artifactId>
                 <version>${kyuubi-hive-jdbc-shaded.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.kyuubi</groupId>
+                <artifactId>kyuubi-spark-connector-hive_2.12</artifactId>
+                <version>${kyuubi-hive-connector.version}</version>
             </dependency>
 
             <dependency>

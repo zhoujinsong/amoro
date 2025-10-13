@@ -93,4 +93,6 @@ public class CatalogMetaProperties {
   // iceberg format catalog properties
   public static final String FILTER_MIXED_CHANGE_STORE_TABLE =
       "iceberg-format.filter-change-store-table";
+
+  public static final String HIVE_METASTORE_JARS = "hive.metastore.jars";
 }

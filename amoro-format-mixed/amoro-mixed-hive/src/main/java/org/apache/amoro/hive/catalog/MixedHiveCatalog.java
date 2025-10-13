@@ -147,7 +147,9 @@ public class MixedHiveCatalog implements MixedFormatCatalog {
     try {
       hiveClientPool.run(
           client -> {
-            client.createDatabase(HiveUtil.constructHiveDatabase(databaseName, metadata));
+            client.createDatabase(
+                HiveUtil.constructHiveDatabase(
+                    databaseName, metadata, tableMetaStore.getConfiguration()));
             return null;
           });
     } catch (AlreadyExistsException e) {

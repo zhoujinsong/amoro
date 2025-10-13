@@ -22,6 +22,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.table.TableMetaStore;
+import org.apache.amoro.utils.IsolatedClassLoader;
 import org.apache.amoro.utils.PropertyUtil;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.InvalidObjectException;
@@ -34,18 +35,27 @@ import org.apache.thrift.TException;
 
 import java.io.Serializable;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /** Cache {@link AuthenticatedHiveClientPool} with {@link TableMetaStore} key. */
 public class CachedHiveClientPool implements HMSClientPool, Serializable {
 
   private static Cache<TableMetaStore, AuthenticatedHiveClientPool> clientPoolCache;
+  private Optional<IsolatedClassLoader> isolatedClassLoader;
 
   private final TableMetaStore tableMetaStore;
   private final int clientPoolSize;
   private final long evictionInterval;
 
   public CachedHiveClientPool(TableMetaStore tableMetaStore, Map<String, String> properties) {
+    this(tableMetaStore, properties, Optional.empty());
+  }
+
+  public CachedHiveClientPool(
+      TableMetaStore tableMetaStore,
+      Map<String, String> properties,
+      Optional<IsolatedClassLoader> isolatedClassLoader) {
     this.tableMetaStore = tableMetaStore;
     this.clientPoolSize =
         PropertyUtil.propertyAsInt(
@@ -57,12 +67,18 @@ public class CachedHiveClientPool implements HMSClientPool, Serializable {
             properties,
             CatalogMetaProperties.CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS,
             CatalogMetaProperties.CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS_DEFAULT);
+    this.isolatedClassLoader = isolatedClassLoader;
     init();
   }
 
-  private AuthenticatedHiveClientPool clientPool() {
+  private AuthenticatedHiveClientPool clientPool(Optional<ClassLoader> classLoader) {
     return clientPoolCache.get(
-        tableMetaStore, k -> new AuthenticatedHiveClientPool(tableMetaStore, clientPoolSize));
+        tableMetaStore,
+        k -> new AuthenticatedHiveClientPool(tableMetaStore, clientPoolSize, classLoader));
+  }
+
+  private AuthenticatedHiveClientPool clientPool() {
+    return clientPool(Optional.empty());
   }
 
   private synchronized void init() {
@@ -79,7 +95,17 @@ public class CachedHiveClientPool implements HMSClientPool, Serializable {
   public <R> R run(Action<R, HMSClient, TException> action)
       throws TException, InterruptedException {
     try {
-      return tableMetaStore.doAs(() -> clientPool().run(action));
+      if (isolatedClassLoader.isPresent()) {
+        return isolatedClassLoader
+            .get()
+            .withClassLoader(
+                cl -> {
+                  return tableMetaStore.doAs(() -> clientPool(Optional.of(cl)).run(action));
+                },
+                RuntimeException.class);
+      } else {
+        return tableMetaStore.doAs(() -> clientPool().run(action));
+      }
     } catch (RuntimeException e) {
       throw throwTException(e);
     }
@@ -89,7 +115,18 @@ public class CachedHiveClientPool implements HMSClientPool, Serializable {
   public <R> R run(Action<R, HMSClient, TException> action, boolean retry)
       throws TException, InterruptedException {
     try {
-      return tableMetaStore.doAs(() -> clientPool().run(action, retry));
+      if (isolatedClassLoader.isPresent()) {
+        return isolatedClassLoader
+            .get()
+            .withClassLoader(
+                cl -> {
+                  return tableMetaStore.doAs(
+                      () -> clientPool(Optional.ofNullable(cl)).run(action, retry));
+                },
+                RuntimeException.class);
+      } else {
+        return tableMetaStore.doAs(() -> clientPool().run(action, retry));
+      }
     } catch (RuntimeException e) {
       throw throwTException(e);
     }
