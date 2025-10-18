@@ -140,7 +140,6 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
             formatCatalog -> {
               try {
                 AmoroTable<?> amoroTable = formatCatalog.loadTable(database, table);
-                LOG.info(" {} loaded from {} ", amoroTable.name(), formatCatalog.getClass());
                 return amoroTable;
               } catch (NoSuchTableException e) {
                 return null;

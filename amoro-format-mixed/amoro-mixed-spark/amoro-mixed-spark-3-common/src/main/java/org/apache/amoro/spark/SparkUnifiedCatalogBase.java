@@ -213,8 +213,20 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
         originIdent = ident;
       }
       String database = namespaceToDatabase(originIdent.namespace());
+      LOG.info("loadTableTracker: {} {} is loading table", database, originIdent.name());
       AmoroTable<?> table = unifiedCatalog.loadTable(database, originIdent.name());
-      return tableCatalog(table.format()).loadTable(ident);
+      LOG.info(
+          "loadTableTracker: {} {} load table from {}",
+          database,
+          originIdent.name(),
+          table.format());
+      Table loadTable = tableCatalog(table.format()).loadTable(ident);
+      LOG.info(
+          "loadTableTracker: {} {} success load from {}",
+          database,
+          originIdent.name(),
+          tableCatalog(table.format()));
+      return loadTable;
     } catch (org.apache.amoro.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
     }
@@ -356,6 +368,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
             .setAuthenticationContext(unifiedCatalog.authenticationContext());
         tableCatalogInitializeProperties.put(CATALOG_REGISTER_NAME, unifiedCatalog.name());
       }
+      LOG.info(" init table catalog {} with conf {}", name, tableCatalogInitializeProperties);
       tableCatalog.initialize(name, new CaseInsensitiveStringMap(tableCatalogInitializeProperties));
       return tableCatalog;
     } catch (ClassNotFoundException e) {

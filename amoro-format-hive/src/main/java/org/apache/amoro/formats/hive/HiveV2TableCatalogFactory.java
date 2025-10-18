@@ -27,17 +27,28 @@ import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.DynConstructors;
 import org.apache.amoro.utils.IsolatedClassLoader;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.Arrays;
 import java.util.Map;
 
 public class HiveV2TableCatalogFactory implements FormatCatalogFactory {
 
+  private static final Logger LOG = LoggerFactory.getLogger(HiveV2TableCatalogFactory.class);
+
   @Override
   public FormatCatalog create(
       String name, String metastoreType, Map<String, String> properties, TableMetaStore metaStore) {
     Preconditions.checkArgument(StringUtils.isNotBlank(metastoreType), "metastore type is blank");
-    if (properties.containsKey(CatalogMetaProperties.HIVE_METASTORE_JARS)) {
+    boolean useIsolatedClassLoader = false;
+    if (properties.containsKey(CatalogMetaProperties.HIVE_METASTORE_JARS)
+        && new File(properties.get(CatalogMetaProperties.HIVE_METASTORE_JARS)).exists()) {
+      useIsolatedClassLoader = true;
+      LOG.info("Using Isolated ClassLoader for {}.", name);
+    }
+    if (useIsolatedClassLoader) {
       final IsolatedClassLoader isolatedClassLoader =
           IsolatedClassLoader.buildClassLoader(
               Arrays.asList(properties.get(CatalogMetaProperties.HIVE_METASTORE_JARS)));
