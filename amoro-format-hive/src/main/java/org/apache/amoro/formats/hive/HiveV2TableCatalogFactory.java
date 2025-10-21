@@ -43,15 +43,20 @@ public class HiveV2TableCatalogFactory implements FormatCatalogFactory {
       String name, String metastoreType, Map<String, String> properties, TableMetaStore metaStore) {
     Preconditions.checkArgument(StringUtils.isNotBlank(metastoreType), "metastore type is blank");
     boolean useIsolatedClassLoader = false;
-    if (properties.containsKey(CatalogMetaProperties.HIVE_METASTORE_JARS)
-        && new File(properties.get(CatalogMetaProperties.HIVE_METASTORE_JARS)).exists()) {
+    String isolateClassloaderPath = properties.get(CatalogMetaProperties.HIVE_METASTORE_JARS);
+    if (isolateClassloaderPath != null && isolateClassloaderPath.endsWith("/*")) {
+      isolateClassloaderPath =
+          isolateClassloaderPath.substring(0, isolateClassloaderPath.length() - 2);
+    }
+    if (isolateClassloaderPath != null
+        && new File(isolateClassloaderPath).exists()
+        && new File(isolateClassloaderPath).isDirectory()) {
       useIsolatedClassLoader = true;
       LOG.info("Using Isolated ClassLoader for {}.", name);
     }
     if (useIsolatedClassLoader) {
       final IsolatedClassLoader isolatedClassLoader =
-          IsolatedClassLoader.buildClassLoader(
-              Arrays.asList(properties.get(CatalogMetaProperties.HIVE_METASTORE_JARS)));
+          IsolatedClassLoader.buildClassLoader(Arrays.asList(isolateClassloaderPath));
       return isolatedClassLoader.withClassLoader(
           cl -> {
             DynConstructors.Ctor<FormatCatalog> ctor =
