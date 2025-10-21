@@ -133,6 +133,9 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   }
 
   private String namespaceToDatabase(String[] namespace) {
+    if (namespace.length == 0) {
+      return defaultNamespace()[0];
+    }
     Preconditions.checkArgument(namespace.length == 1, "only support namespace with 1 level.");
     return namespace[0];
   }
