@@ -368,7 +368,8 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
             .setAuthenticationContext(unifiedCatalog.authenticationContext());
         tableCatalogInitializeProperties.put(CATALOG_REGISTER_NAME, unifiedCatalog.name());
       }
-      LOG.info(" init table catalog {} with conf {}", name, tableCatalogInitializeProperties);
+      LOG.info(
+          "initTracker: table catalog {} with conf {}", name, tableCatalogInitializeProperties);
       tableCatalog.initialize(name, new CaseInsensitiveStringMap(tableCatalogInitializeProperties));
       return tableCatalog;
     } catch (ClassNotFoundException e) {
