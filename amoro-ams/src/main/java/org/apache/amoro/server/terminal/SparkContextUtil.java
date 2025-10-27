@@ -99,7 +99,7 @@ public class SparkContextUtil {
           sparkCatalogPrefix = "spark.sql.catalog" + catalog;
           catalogClassName = UNIFIED_SESSION_CATALOG;
         }
-        sparkConf.put(sparkCatalogPrefix + ".uri", uri);
+        sparkConf.put(sparkCatalogPrefix + ".ams.uri", uri);
       } else {
         catalogClassName = "iceberg".equalsIgnoreCase(connector) ? ICEBERG_CATALOG : PAIMON_CATALOG;
         Map<String, String> properties =

@@ -194,10 +194,6 @@ public class AmoroServiceContainer {
     initThriftService();
     startThriftService();
 
-    initHttpService();
-    startHttpService();
-    registerAmsServiceMetric();
-
     PartitionManager.init(serviceConfig);
   }
 
