@@ -20,18 +20,16 @@ package org.apache.amoro.spark;
 
 import static org.apache.iceberg.CatalogUtil.ICEBERG_CATALOG_TYPE;
 
-import org.apache.amoro.AmoroTable;
-import org.apache.amoro.CommonUnifiedCatalog;
 import org.apache.amoro.Constants;
 import org.apache.amoro.FormatCatalogFactory;
 import org.apache.amoro.TableFormat;
-import org.apache.amoro.TableIDWithFormat;
 import org.apache.amoro.UnifiedCatalog;
 import org.apache.amoro.UnifiedCatalogLoader;
 import org.apache.amoro.client.AmsThriftUrl;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableMap;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
+import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -119,7 +117,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       TableMetaStore tableMetaStore =
           TableMetaStore.builder().withConfiguration(localConfiguration).build();
       this.unifiedCatalog =
-          new CommonUnifiedCatalog(name, metastoreType, properties, tableMetaStore);
+          UnifiedCatalogLoader.loadUnifiedCatalog(name, metastoreType, properties, tableMetaStore);
     }
     ServiceLoader<SparkTableFormat> sparkTableFormats = ServiceLoader.load(SparkTableFormat.class);
     for (SparkTableFormat format : sparkTableFormats) {
@@ -186,13 +184,13 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
     if (!unifiedCatalog.databaseExists(database)) {
       throw new NoSuchNamespaceException(namespace);
     }
-    List<TableIDWithFormat> tables = unifiedCatalog.listTables(database);
+    List<TableIdentifier> tables = unifiedCatalog.listTableIdentifiers(database);
     if (!tables.isEmpty() && !cascade) {
       throw new IllegalStateException("Namespace '" + database + "' is non empty.");
     }
 
-    for (TableIDWithFormat id : tables) {
-      unifiedCatalog.dropTable(database, id.getIdentifier().getTableName(), true);
+    for (TableIdentifier identifier : tables) {
+      unifiedCatalog.dropTable(database, identifier.getTableName(), true);
     }
     unifiedCatalog.dropDatabase(database);
     return !unifiedCatalog.databaseExists(database);
@@ -201,10 +199,11 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   @Override
   public Identifier[] listTables(String[] namespace) throws NoSuchNamespaceException {
     String database = namespaceToDatabase(namespace);
-    List<TableIDWithFormat> tables = unifiedCatalog.listTables(database);
-
-    return tables.stream()
-        .map(id -> Identifier.of(new String[] {id.database()}, id.table()))
+    List<TableIdentifier> tableIdentifiers = unifiedCatalog.listTableIdentifiers(database);
+    return tableIdentifiers.stream()
+        .map(
+            identifier ->
+                Identifier.of(new String[] {identifier.getDatabase()}, identifier.getTableName()))
         .toArray(Identifier[]::new);
   }
 
@@ -217,15 +216,15 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       }
       String database = namespaceToDatabase(originIdent.namespace());
       LOG.info("loadTableTracker: {}.{} start loading table", database, originIdent.name());
-      AmoroTable<?> table = unifiedCatalog.loadTable(database, originIdent.name());
+      TableFormat tableFormat = unifiedCatalog.loadTableFormat(database, originIdent.name());
       LOG.info(
-          "loadTableTracker: {}.{} find table in {}", database, originIdent.name(), table.format());
-      Table loadTable = tableCatalog(table.format()).loadTable(ident);
+          "loadTableTracker: {}.{} find table in {}", database, originIdent.name(), tableFormat);
+      Table loadTable = tableCatalog(tableFormat).loadTable(ident);
       LOG.info(
           "loadTableTracker: {}.{} success load in {}",
           database,
           originIdent.name(),
-          tableCatalog(table.format()).name());
+          tableCatalog(tableFormat).name());
       return loadTable;
     } catch (org.apache.amoro.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
@@ -249,9 +248,9 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   @Override
   public void invalidateTable(Identifier ident) {
     try {
-      AmoroTable<?> table =
-          unifiedCatalog.loadTable(namespaceToDatabase(ident.namespace()), ident.name());
-      tableCatalog(table.format()).invalidateTable(ident);
+      TableFormat format =
+          unifiedCatalog.loadTableFormat(namespaceToDatabase(ident.namespace()), ident.name());
+      tableCatalog(format).invalidateTable(ident);
     } catch (org.apache.amoro.NoSuchTableException e) {
       // pass
     }
@@ -274,7 +273,8 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       format = TableFormat.HIVE_V2;
     }
     if (format == null) {
-      throw new IllegalArgumentException("table file format {" + format + "} is not supported.");
+      throw new IllegalArgumentException(
+          "table file format {" + fileFormat + "} is not supported.");
     }
     TableCatalog catalog = tableCatalog(format);
     return catalog.createTable(ident, schema, partitions, properties);
@@ -283,9 +283,9 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   @Override
   public Table alterTable(Identifier ident, TableChange... changes) throws NoSuchTableException {
     try {
-      AmoroTable<?> table =
-          unifiedCatalog.loadTable(namespaceToDatabase(ident.namespace()), ident.name());
-      return tableCatalog(table.format()).alterTable(ident, changes);
+      TableFormat tableFormat =
+          unifiedCatalog.loadTableFormat(namespaceToDatabase(ident.namespace()), ident.name());
+      return tableCatalog(tableFormat).alterTable(ident, changes);
     } catch (org.apache.amoro.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
     }
@@ -308,8 +308,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       throws NoSuchTableException, TableAlreadyExistsException {
     String database = namespaceToDatabase(oldIdent.namespace());
     String tableName = oldIdent.name();
-    AmoroTable<?> table = unifiedCatalog.loadTable(database, tableName);
-    TableFormat format = table.format();
+    TableFormat format = unifiedCatalog.loadTableFormat(database, tableName);
     TableCatalog catalog = tableCatalog(format);
     catalog.renameTable(oldIdent, newIdent);
   }
@@ -368,8 +367,6 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
             .setAuthenticationContext(unifiedCatalog.authenticationContext());
         tableCatalogInitializeProperties.put(CATALOG_REGISTER_NAME, unifiedCatalog.name());
       }
-      LOG.info(
-          "initTracker: table catalog {} with conf {}", name, tableCatalogInitializeProperties);
       tableCatalog.initialize(name, new CaseInsensitiveStringMap(tableCatalogInitializeProperties));
       return tableCatalog;
     } catch (ClassNotFoundException e) {

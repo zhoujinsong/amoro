@@ -245,4 +245,15 @@ public class CatalogUtil {
     }
     return defaultValue;
   }
+
+  public static boolean supportHiveFastMode(Set<TableFormat> tableFormats) {
+    if (!tableFormats.contains(TableFormat.HIVE_V2)) {
+      return false;
+    }
+    // TODO: support more table formats
+    Set<TableFormat> supportFormats =
+        Sets.newHashSet(
+            TableFormat.MIXED_ICEBERG, TableFormat.ICEBERG, TableFormat.HUDI, TableFormat.HIVE_V2);
+    return supportFormats.containsAll(tableFormats);
+  }
 }

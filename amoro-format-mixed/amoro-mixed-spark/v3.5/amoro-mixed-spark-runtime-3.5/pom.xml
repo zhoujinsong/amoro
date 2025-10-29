@@ -499,17 +499,7 @@
                                             <include>org.apache.curator:curator-recipes</include>
                                             <include>org.apache.zookeeper:zookeeper</include>
                                             <include>org.apache.zookeeper:zookeeper-jute</include>
-                                            <include>org.apache.parquet:parquet-column</include>
-                                            <include>org.apache.parquet:parquet-hadoop</include>
-                                            <include>org.apache.parquet:parquet-common</include>
-                                            <include>org.apache.parquet:parquet-format</include>
-                                            <include>org.apache.parquet:parquet-format-structures</include>
-                                            <include>org.apache.parquet:parquet-encoding</include>
-                                            <include>org.apache.parquet:parquet-jackson</include>
-                                            <include>org.apache.orc:*</include>
                                             <include>org.apache.thrift:libthrift</include>
-                                            <include>org.apache.avro:avro</include>
-                                            <include>org.apache.parquet:parquet-avro</include>
                                             <include>org.apache.commons:commons-pool2</include>
                                             <include>org.apache.commons:commons-lang3</include>
                                             <include>org.apache.commons:commons-collections</include>
@@ -544,65 +534,65 @@
                                             <shadedPattern>org.apache.amoro.spark.sql</shadedPattern>
                                         </relocation>
 
-                                        <!-- relocation required dependencies -->
+                                        <!-- relocation  iceberg required dependencies -->
                                         <relocation>
                                             <pattern>org.apache.orc</pattern>
-                                            <shadedPattern>org.apache.amoro.shade.org.apache.orc
+                                            <shadedPattern>org.apache.iceberg.shaded.org.apache.orc
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.avro</pattern>
-                                            <shadedPattern>org.apache.amoro.shade.org.apache.avro
+                                            <shadedPattern>org.apache.iceberg.shaded.org.apache.avro
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet.avro</pattern>
                                             <shadedPattern>
-                                                org.apache.amoro.shade.org.apache.parquet.avro
+                                                org.apache.iceberg.shaded.org.apache.parquet.avro
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet.column</pattern>
                                             <shadedPattern>
-                                                org.apache.amoro.shade.org.apache.parquet.column
+                                                org.apache.iceberg.shaded.org.apache.parquet.column
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet.hadoop</pattern>
                                             <shadedPattern>
-                                                org.apache.amoro.shade.org.apache.parquet.hadoop
+                                                org.apache.iceberg.shaded.org.apache.parquet.hadoop
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet.common</pattern>
                                             <shadedPattern>
-                                                org.apache.amoro.shade.org.apache.parquet.common
+                                                org.apache.iceberg.shaded.org.apache.parquet.common
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet.format</pattern>
                                             <shadedPattern>
-                                                org.apache.amoro.shade.org.apache.parquet.format
+                                                org.apache.iceberg.shaded.org.apache.parquet.format
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>shaded.parquet</pattern>
-                                            <shadedPattern>org.apache.amoro.shade.parquet</shadedPattern>
+                                            <shadedPattern>org.apache.iceberg.shaded.parquet</shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>shaded.parquet.it</pattern>
-                                            <shadedPattern>org.apache.amoro.shade.parquet.it
+                                            <shadedPattern>org.apache.iceberg.shaded.parquet.it
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet.crypto</pattern>
                                             <shadedPattern>
-                                                org.apache.amoro.shade.org.apache.parquet.crypto
+                                                org.apache.iceberg.shaded.org.apache.parquet.crypto
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>
                                             <pattern>org.apache.parquet</pattern>
-                                            <shadedPattern>org.apache.amoro.shade.org.apache.parquet
+                                            <shadedPattern>org.apache.iceberg.shaded.org.apache.parquet
                                             </shadedPattern>
                                         </relocation>
                                         <relocation>

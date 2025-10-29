@@ -21,8 +21,11 @@ package org.apache.amoro;
 import org.apache.amoro.api.CatalogMeta;
 import org.apache.amoro.api.NoSuchObjectException;
 import org.apache.amoro.properties.CatalogMetaProperties;
+import org.apache.amoro.table.TableMetaStore;
+import org.apache.amoro.utils.CatalogUtil;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public class UnifiedCatalogLoader {
@@ -43,7 +46,20 @@ public class UnifiedCatalogLoader {
             throw new IllegalStateException("failed when load catalog " + catalogName, e);
           }
         };
-
     return new CommonUnifiedCatalog(metaSupplier, props);
+  }
+
+  public static UnifiedCatalog loadUnifiedCatalog(
+      String catalogName,
+      String metastoreType,
+      Map<String, String> properties,
+      TableMetaStore tableMetaStore) {
+    Set<TableFormat> formats = CatalogUtil.tableFormats(metastoreType, properties);
+    if (CatalogMetaProperties.CATALOG_TYPE_HIVE.equalsIgnoreCase(metastoreType)
+        && CatalogUtil.supportHiveFastMode(formats)) {
+      return new CommonFastUnifiedCatalog(catalogName, metastoreType, properties, tableMetaStore);
+    } else {
+      return new CommonUnifiedCatalog(catalogName, metastoreType, properties, tableMetaStore);
+    }
   }
 }

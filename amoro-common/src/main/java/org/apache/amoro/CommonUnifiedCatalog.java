@@ -27,9 +27,12 @@ import org.apache.amoro.utils.CatalogUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -39,7 +42,7 @@ import java.util.stream.Stream;
 public class CommonUnifiedCatalog implements UnifiedCatalog {
 
   private static final Logger LOG = LoggerFactory.getLogger(CommonUnifiedCatalog.class);
-  private final String catalogName;
+  protected final String catalogName;
   private final String metaStoreType;
   private final Supplier<CatalogMeta> metaSupplier;
   // Client side catalog properties
@@ -48,7 +51,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   private Map<String, String> catalogProperties;
   private CatalogMeta meta;
   private TableMetaStore tableMetaStore;
-  private Map<TableFormat, FormatCatalog> formatCatalogs = Maps.newHashMap();
+  protected Map<TableFormat, FormatCatalog> formatCatalogs = Maps.newHashMap();
 
   public CommonUnifiedCatalog(
       Supplier<CatalogMeta> catalogMetaSupplier, Map<String, String> properties) {
@@ -121,7 +124,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
 
   @Override
   public void dropDatabase(String database) {
-    if (!listTables(database).isEmpty()) {
+    if (!listTableIdentifiers(database).isEmpty()) {
       throw new IllegalStateException("Database: " + database + " is not empty.");
     }
     findFirstFormatCatalog(TableFormat.values()).dropDatabase(database);
@@ -130,12 +133,12 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   @Override
   public AmoroTable<?> loadTable(String database, String table) {
     return formatCatalogAsOrder(
-            TableFormat.MIXED_HIVE,
             TableFormat.MIXED_ICEBERG,
             TableFormat.ICEBERG,
-            TableFormat.HIVE_V2,
             TableFormat.PAIMON,
-            TableFormat.HUDI)
+            TableFormat.HUDI,
+            TableFormat.MIXED_HIVE,
+            TableFormat.HIVE_V2)
         .map(
             formatCatalog -> {
               try {
@@ -159,12 +162,12 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   public List<TableIDWithFormat> listTables(String database) {
     TableFormat[] formats =
         new TableFormat[] {
-          TableFormat.MIXED_HIVE,
           TableFormat.MIXED_ICEBERG,
           TableFormat.ICEBERG,
-          TableFormat.HIVE_V2,
           TableFormat.PAIMON,
-          TableFormat.HUDI
+          TableFormat.HUDI,
+          TableFormat.MIXED_HIVE,
+          TableFormat.HIVE_V2
         };
 
     Map<String, TableFormat> tableNameToFormat = Maps.newHashMap();
@@ -190,8 +193,8 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   @Override
   public boolean dropTable(String database, String table, boolean purge) {
     try {
-      AmoroTable<?> t = loadTable(database, table);
-      return findFirstFormatCatalog(t.format()).dropTable(database, table, purge);
+      TableFormat format = loadTableFormat(database, table);
+      return findFirstFormatCatalog(format).dropTable(database, table, purge);
     } catch (NoSuchTableException e) {
       return false;
     }
@@ -215,6 +218,23 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   @Override
   public Map<String, String> properties() {
     return catalogProperties;
+  }
+
+  @Override
+  public TableFormat loadTableFormat(String database, String table) {
+    AmoroTable<?> amoroTable = loadTable(database, table);
+    if (amoroTable == null) {
+      throw new NoSuchTableException("Table: " + table + " does not exist.");
+    }
+    return amoroTable.format();
+  }
+
+  @Override
+  public List<TableIdentifier> listTableIdentifiers(String database) {
+    List<TableIDWithFormat> tables = listTables(database);
+    return tables.stream()
+        .map(id -> TableIdentifier.of(id.catalog(), id.database(), id.table()))
+        .collect(Collectors.toList());
   }
 
   protected void initializeFormatCatalogs() {
@@ -246,10 +266,24 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   }
 
   private FormatCatalog findFirstFormatCatalog(TableFormat... formats) {
-    return Stream.of(formats)
-        .filter(formatCatalogs::containsKey)
-        .map(formatCatalogs::get)
-        .findFirst()
-        .orElseThrow(() -> new IllegalStateException("No format catalog found."));
+    Set<TableFormat> formatSet = new HashSet<>(Arrays.asList(formats));
+    Optional<FormatCatalog> preferredCatalogs = Optional.empty();
+    if (catalogProperties.containsKey(CatalogMetaProperties.CATALOG_PREFERRED_ORDER)) {
+      String[] orders =
+          catalogProperties.get(CatalogMetaProperties.CATALOG_PREFERRED_ORDER).split(",");
+      preferredCatalogs =
+          Arrays.stream(orders)
+              .filter(formatCatalogs::containsKey)
+              .filter(formatSet::contains)
+              .map(formatCatalogs::get)
+              .findFirst();
+    }
+    return preferredCatalogs.orElseGet(
+        () ->
+            Stream.of(formats)
+                .filter(formatCatalogs::containsKey)
+                .map(formatCatalogs::get)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No format catalog found.")));
   }
 }

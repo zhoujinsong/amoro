@@ -18,6 +18,7 @@
 
 package org.apache.amoro;
 
+import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 
 import java.util.List;
@@ -56,4 +57,23 @@ public interface UnifiedCatalog extends AmoroCatalog {
    * @return catalog properties
    */
   Map<String, String> properties();
+
+  /**
+   * load table format from catalog.
+   *
+   * @param database database name
+   * @param table table name
+   * @return table instance
+   * @throws NoSuchDatabaseException when database not exists.
+   * @throws NoSuchTableException when table not exists.
+   */
+  TableFormat loadTableFormat(String database, String table);
+
+  /**
+   * List tables identifiers
+   *
+   * @param database given database
+   * @return table identifiers
+   */
+  List<TableIdentifier> listTableIdentifiers(String database);
 }
