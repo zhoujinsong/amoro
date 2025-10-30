@@ -170,13 +170,27 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
           TableFormat.HIVE_V2
         };
 
+    String separator =
+        catalogProperties.getOrDefault(
+            CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR,
+            CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR_DEFAULT);
+    String changeStoreSuffix = separator + "change" + separator;
     Map<String, TableFormat> tableNameToFormat = Maps.newHashMap();
     for (TableFormat format : formats) {
       if (formatCatalogs.containsKey(format)) {
-        formatCatalogs
-            .get(format)
-            .listTables(database)
-            .forEach(table -> tableNameToFormat.putIfAbsent(table, format));
+        Stream<String> nameStream = formatCatalogs.get(format).listTables(database).stream();
+        // Filter change store for mixed formats
+        if ((formatCatalogs.containsKey(TableFormat.MIXED_ICEBERG)
+                || formatCatalogs.containsKey(TableFormat.MIXED_HIVE))
+            && (format.equals(TableFormat.ICEBERG) || format.equals(TableFormat.HIVE_V2))) {
+          nameStream =
+              nameStream.filter(
+                  name ->
+                      !name.endsWith(changeStoreSuffix)
+                          || !tableNameToFormat.containsKey(
+                              name.substring(0, name.length() - changeStoreSuffix.length())));
+        }
+        nameStream.forEach(table -> tableNameToFormat.putIfAbsent(table, format));
       }
     }
 
@@ -241,13 +255,6 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
     ServiceLoader<FormatCatalogFactory> loader = ServiceLoader.load(FormatCatalogFactory.class);
     Set<TableFormat> formats = CatalogUtil.tableFormats(metaStoreType, catalogProperties);
     Map<TableFormat, FormatCatalog> formatCatalogs = Maps.newConcurrentMap();
-    // Filter mixed change store for iceberg catalog if containing both Iceberg and Mixed Iceberg
-    // formats
-    if (formats.contains(TableFormat.ICEBERG)
-        && formats.contains(TableFormat.MIXED_ICEBERG)
-        && !metaStoreType.equals(CatalogMetaProperties.CATALOG_TYPE_AMS)) {
-      catalogProperties.put(CatalogMetaProperties.FILTER_MIXED_CHANGE_STORE_TABLE, "true");
-    }
     for (FormatCatalogFactory factory : loader) {
       if (formats.contains(factory.format())) {
         Map<String, String> formatCatalogProperties =

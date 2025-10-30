@@ -93,10 +93,6 @@ public class CatalogMetaProperties {
   public static final String MIXED_FORMAT_TABLE_STORE = "mixed-format.table-store";
   public static final String MIXED_FORMAT_TABLE_STORE_BASE = "base";
 
-  // iceberg format catalog properties
-  public static final String FILTER_MIXED_CHANGE_STORE_TABLE =
-      "iceberg-format.filter-change-store-table";
-
   public static final String HIVE_METASTORE_JARS = "hive.metastore.jars";
 
   // the preferred order when using catalog
