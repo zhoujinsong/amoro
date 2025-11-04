@@ -26,11 +26,13 @@ import org.apache.amoro.TableFormat;
 import org.apache.amoro.UnifiedCatalog;
 import org.apache.amoro.UnifiedCatalogLoader;
 import org.apache.amoro.client.AmsThriftUrl;
+import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableMap;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
+import org.apache.amoro.utils.CatalogUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.spark.SparkUtil;
@@ -216,6 +218,14 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       }
       String database = namespaceToDatabase(originIdent.namespace());
       LOG.info("loadTableTracker: {}.{} start loading table", database, originIdent.name());
+      Optional<Table> table = loadTableByPreferredCatalog(ident);
+      if (table.isPresent()) {
+        LOG.info(
+            "loadTableTracker: {}.{} success load by preferred catalog",
+            database,
+            originIdent.name());
+        return table.get();
+      }
       TableFormat tableFormat = unifiedCatalog.loadTableFormat(database, originIdent.name());
       LOG.info(
           "loadTableTracker: {}.{} find table in {}", database, originIdent.name(), tableFormat);
@@ -229,6 +239,37 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
     } catch (org.apache.amoro.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
     }
+  }
+
+  public Optional<Table> loadTableByPreferredCatalog(Identifier ident) {
+    String preferredCatalog =
+        unifiedCatalog.properties().get(CatalogMetaProperties.CATALOG_PREFERRED_ORDER);
+    if (preferredCatalog == null) {
+      return Optional.empty();
+    }
+    try {
+      TableFormat preferredFormat = TableFormat.valueOf(preferredCatalog);
+      Table table = tableCatalog(preferredFormat).loadTable(ident);
+      if (isFormatMismatch(table.properties(), preferredFormat)) {
+        return Optional.empty();
+      }
+      return Optional.of(table);
+    } catch (org.apache.spark.sql.catalyst.analysis.NoSuchTableException e) {
+      // pass
+    } catch (Throwable e) {
+      LOG.warn("Ignore error loading table by preferred catalog", e);
+    }
+    return Optional.empty();
+  }
+
+  private boolean isFormatMismatch(
+      Map<String, String> tableProperties, TableFormat preferredFormat) {
+    return (CatalogUtil.isMixedTableFormat(tableProperties)
+            && preferredFormat != TableFormat.MIXED_ICEBERG)
+        || (CatalogUtil.isIcebergTableFormat(tableProperties)
+            && preferredFormat != TableFormat.ICEBERG)
+        || (CatalogUtil.isHoodieTableFormat(tableProperties)
+            && preferredFormat != TableFormat.HUDI);
   }
 
   private Identifier originIdentifierOfSubTable(Identifier identifier) {

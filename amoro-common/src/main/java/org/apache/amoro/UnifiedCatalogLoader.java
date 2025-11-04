@@ -56,8 +56,9 @@ public class UnifiedCatalogLoader {
       TableMetaStore tableMetaStore) {
     Set<TableFormat> formats = CatalogUtil.tableFormats(metastoreType, properties);
     if (CatalogMetaProperties.CATALOG_TYPE_HIVE.equalsIgnoreCase(metastoreType)
-        && CatalogUtil.supportHiveFastMode(formats)) {
-      return new CommonFastUnifiedCatalog(catalogName, metastoreType, properties, tableMetaStore);
+        && CatalogUtil.supportOptimizedMode(formats)) {
+      return new OptimizedCommonUnifiedCatalog(
+          catalogName, metastoreType, properties, tableMetaStore);
     } else {
       return new CommonUnifiedCatalog(catalogName, metastoreType, properties, tableMetaStore);
     }

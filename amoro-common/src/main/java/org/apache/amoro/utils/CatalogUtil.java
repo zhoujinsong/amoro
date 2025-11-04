@@ -27,6 +27,7 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.iceberg.BaseMetastoreTableOperations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +40,8 @@ import java.util.stream.Collectors;
 public class CatalogUtil {
 
   private static final Logger LOG = LoggerFactory.getLogger(CatalogUtil.class);
+  private static final String SPARK_SOURCE_PROVIDER = "spark.sql.sources.provider";
+  private static String FLINK_CONNECTOR = "connector";
 
   /** Return table format set catalog supported. */
   public static Set<TableFormat> tableFormats(CatalogMeta meta) {
@@ -246,7 +249,7 @@ public class CatalogUtil {
     return defaultValue;
   }
 
-  public static boolean supportHiveFastMode(Set<TableFormat> tableFormats) {
+  public static boolean supportOptimizedMode(Set<TableFormat> tableFormats) {
     if (!tableFormats.contains(TableFormat.HIVE_V2)) {
       return false;
     }
@@ -255,5 +258,45 @@ public class CatalogUtil {
         Sets.newHashSet(
             TableFormat.MIXED_ICEBERG, TableFormat.ICEBERG, TableFormat.HUDI, TableFormat.HIVE_V2);
     return supportFormats.containsAll(tableFormats);
+  }
+
+  /**
+   * Check if the given table properties is a iceberg-format table
+   *
+   * @param properties properties of the table.
+   * @return true if this is a mixed-format table.
+   */
+  public static boolean isIcebergTableFormat(Map<String, String> properties) {
+    String tableFormat = properties.get(CatalogMetaProperties.TABLE_FORMAT);
+    String tableType = properties.getOrDefault(BaseMetastoreTableOperations.TABLE_TYPE_PROP, "");
+    return TableFormat.ICEBERG.name().equalsIgnoreCase(tableFormat)
+        || BaseMetastoreTableOperations.ICEBERG_TABLE_TYPE_VALUE.equalsIgnoreCase(tableType);
+  }
+
+  /**
+   * Check if the given table properties is a mixed-format table
+   *
+   * @param properties properties of the table.
+   * @return true if this is a mixed-format table.
+   */
+  public static boolean isMixedTableFormat(Map<String, String> properties) {
+    String tableFormat = properties.get(CatalogMetaProperties.TABLE_FORMAT);
+    String tableStore = properties.get(CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE);
+    return isIcebergTableFormat(properties)
+        && TableFormat.MIXED_ICEBERG.name().equalsIgnoreCase(tableFormat)
+        && CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_BASE.equalsIgnoreCase(tableStore);
+  }
+
+  /**
+   * Check if the given table properties is a hudi-format table
+   *
+   * @param properties properties of the table.
+   * @return true if this is a mixed-format table.
+   */
+  public static boolean isHoodieTableFormat(Map<String, String> properties) {
+    String tableFormat = properties.get(CatalogMetaProperties.TABLE_FORMAT);
+    return TableFormat.HUDI.name().equalsIgnoreCase(tableFormat)
+        || "hudi".equalsIgnoreCase(properties.getOrDefault(SPARK_SOURCE_PROVIDER, ""))
+        || "hudi".equalsIgnoreCase(properties.getOrDefault(FLINK_CONNECTOR, ""));
   }
 }

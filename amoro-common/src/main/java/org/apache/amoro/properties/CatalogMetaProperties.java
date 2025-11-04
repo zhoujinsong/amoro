@@ -89,7 +89,7 @@ public class CatalogMetaProperties {
   public static final String MIXED_FORMAT_TABLE_STORE_SEPARATOR =
       "mixed-format.table-store.separator";
   public static final String MIXED_FORMAT_TABLE_STORE_SEPARATOR_DEFAULT = "_";
-  public static final String MIXED_FORMAT_TABLE_KEY = "table-format";
+  public static final String TABLE_FORMAT = "table-format";
   public static final String MIXED_FORMAT_TABLE_STORE = "mixed-format.table-store";
   public static final String MIXED_FORMAT_TABLE_STORE_BASE = "base";
 

@@ -18,22 +18,17 @@
 
 package org.apache.amoro;
 
-import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
-import org.apache.iceberg.BaseMetastoreTableOperations;
 
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class CommonFastUnifiedCatalog extends CommonUnifiedCatalog {
+public class OptimizedCommonUnifiedCatalog extends CommonUnifiedCatalog {
 
-  public static final String SPARK_SOURCE_PROVIDER = "spark.sql.sources.provider";
-  public static String FLINK_CONNECTOR = "connector";
-
-  public CommonFastUnifiedCatalog(
+  public OptimizedCommonUnifiedCatalog(
       String catalogName,
       String metaStoreType,
       Map<String, String> properties,
@@ -43,7 +38,7 @@ public class CommonFastUnifiedCatalog extends CommonUnifiedCatalog {
 
   @Override
   public List<String> listDatabases() {
-    if (!CatalogUtil.supportHiveFastMode(formatCatalogs.keySet())) {
+    if (!CatalogUtil.supportOptimizedMode(formatCatalogs.keySet())) {
       return super.listDatabases();
     }
     return getHiveV2Catalog().listDatabases();
@@ -51,7 +46,7 @@ public class CommonFastUnifiedCatalog extends CommonUnifiedCatalog {
 
   @Override
   public boolean tableExists(String database, String table) {
-    if (!CatalogUtil.supportHiveFastMode(formatCatalogs.keySet())) {
+    if (!CatalogUtil.supportOptimizedMode(formatCatalogs.keySet())) {
       return super.tableExists(database, table);
     }
     return getHiveV2Catalog().tableExists(database, table);
@@ -59,7 +54,7 @@ public class CommonFastUnifiedCatalog extends CommonUnifiedCatalog {
 
   @Override
   public List<TableIdentifier> listTableIdentifiers(String database) {
-    if (!CatalogUtil.supportHiveFastMode(formatCatalogs.keySet())) {
+    if (!CatalogUtil.supportOptimizedMode(formatCatalogs.keySet())) {
       return super.listTableIdentifiers(database);
     }
     return getHiveV2Catalog().listTables(database).stream()
@@ -72,18 +67,18 @@ public class CommonFastUnifiedCatalog extends CommonUnifiedCatalog {
 
   @Override
   public TableFormat loadTableFormat(String database, String table) {
-    if (!CatalogUtil.supportHiveFastMode(formatCatalogs.keySet())) {
+    if (!CatalogUtil.supportOptimizedMode(formatCatalogs.keySet())) {
       return super.loadTableFormat(database, table);
     }
     FormatCatalog formatCatalog = formatCatalogs.get(TableFormat.HIVE_V2);
     AmoroTable<?> amoroTable = formatCatalog.loadTable(database, table);
     // TODO: support more table formats
-    if (isMixedTableFormat(amoroTable.properties())) {
+    if (CatalogUtil.isMixedTableFormat(amoroTable.properties())) {
       return TableFormat.MIXED_ICEBERG;
-    } else if (isHoodieTableFormat(amoroTable.properties())) {
-      return TableFormat.HUDI;
-    } else if (isIcebergTableFormat(amoroTable.properties())) {
+    } else if (CatalogUtil.isIcebergTableFormat(amoroTable.properties())) {
       return TableFormat.ICEBERG;
+    } else if (CatalogUtil.isHoodieTableFormat(amoroTable.properties())) {
+      return TableFormat.HUDI;
     } else {
       return TableFormat.HIVE_V2;
     }
@@ -91,41 +86,5 @@ public class CommonFastUnifiedCatalog extends CommonUnifiedCatalog {
 
   private FormatCatalog getHiveV2Catalog() {
     return formatCatalogs.get(TableFormat.HIVE_V2);
-  }
-
-  /**
-   * Check if the given table properties is a iceberg-format table
-   *
-   * @param properties properties of the table.
-   * @return true if this is a mixed-format table.
-   */
-  private boolean isIcebergTableFormat(Map<String, String> properties) {
-    String tableType = properties.getOrDefault(BaseMetastoreTableOperations.TABLE_TYPE_PROP, "");
-    return BaseMetastoreTableOperations.ICEBERG_TABLE_TYPE_VALUE.equalsIgnoreCase(tableType);
-  }
-
-  /**
-   * Check if the given table properties is a mixed-format table
-   *
-   * @param properties properties of the table.
-   * @return true if this is a mixed-format table.
-   */
-  private boolean isMixedTableFormat(Map<String, String> properties) {
-    String tableFormat = properties.get(CatalogMetaProperties.MIXED_FORMAT_TABLE_KEY);
-    String tableStore = properties.get(CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE);
-    return isIcebergTableFormat(properties)
-        && TableFormat.MIXED_ICEBERG.name().equalsIgnoreCase(tableFormat)
-        && CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_BASE.equalsIgnoreCase(tableStore);
-  }
-
-  /**
-   * Check if the given table properties is a hudi-format table
-   *
-   * @param properties properties of the table.
-   * @return true if this is a mixed-format table.
-   */
-  private boolean isHoodieTableFormat(Map<String, String> properties) {
-    return "hudi".equalsIgnoreCase(properties.getOrDefault(SPARK_SOURCE_PROVIDER, ""))
-        || "hudi".equalsIgnoreCase(properties.getOrDefault(FLINK_CONNECTOR, ""));
   }
 }

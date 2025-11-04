@@ -32,7 +32,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -273,24 +272,24 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   }
 
   private FormatCatalog findFirstFormatCatalog(TableFormat... formats) {
-    Set<TableFormat> formatSet = new HashSet<>(Arrays.asList(formats));
-    Optional<FormatCatalog> preferredCatalogs = Optional.empty();
-    if (catalogProperties.containsKey(CatalogMetaProperties.CATALOG_PREFERRED_ORDER)) {
-      String[] orders =
-          catalogProperties.get(CatalogMetaProperties.CATALOG_PREFERRED_ORDER).split(",");
-      preferredCatalogs =
-          Arrays.stream(orders)
-              .filter(formatCatalogs::containsKey)
-              .filter(formatSet::contains)
-              .map(formatCatalogs::get)
-              .findFirst();
+    String preferredOrder = catalogProperties.get(CatalogMetaProperties.CATALOG_PREFERRED_ORDER);
+    if (preferredOrder != null) {
+      TableFormat preferredFormat = TableFormat.valueOf(preferredOrder);
+      Set<TableFormat> availableFormats = new HashSet<>(Arrays.asList(formats));
+      if (availableFormats.contains(preferredFormat)) {
+        FormatCatalog catalog = formatCatalogs.get(preferredFormat);
+        if (catalog != null) {
+          return catalog;
+        }
+      }
     }
-    return preferredCatalogs.orElseGet(
-        () ->
-            Stream.of(formats)
-                .filter(formatCatalogs::containsKey)
-                .map(formatCatalogs::get)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("No format catalog found.")));
+    return Stream.of(formats)
+        .filter(formatCatalogs::containsKey)
+        .map(formatCatalogs::get)
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "No format catalog found for formats: " + Arrays.toString(formats)));
   }
 }
