@@ -243,7 +243,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
 
   public Optional<Table> loadTableByPreferredCatalog(Identifier ident) {
     String preferredCatalog =
-        unifiedCatalog.properties().get(CatalogMetaProperties.CATALOG_PREFERRED_ORDER);
+        unifiedCatalog.properties().get(CatalogMetaProperties.PREFERRED_LOAD_TABLE_CATALOG);
     if (preferredCatalog == null) {
       return Optional.empty();
     }

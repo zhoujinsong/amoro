@@ -272,9 +272,9 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   }
 
   private FormatCatalog findFirstFormatCatalog(TableFormat... formats) {
-    String preferredOrder = catalogProperties.get(CatalogMetaProperties.CATALOG_PREFERRED_ORDER);
-    if (preferredOrder != null) {
-      TableFormat preferredFormat = TableFormat.valueOf(preferredOrder);
+    String preferredCatalog = catalogProperties.get(CatalogMetaProperties.PREFERRED_CATALOG);
+    if (preferredCatalog != null) {
+      TableFormat preferredFormat = TableFormat.valueOf(preferredCatalog);
       Set<TableFormat> availableFormats = new HashSet<>(Arrays.asList(formats));
       if (availableFormats.contains(preferredFormat)) {
         FormatCatalog catalog = formatCatalogs.get(preferredFormat);

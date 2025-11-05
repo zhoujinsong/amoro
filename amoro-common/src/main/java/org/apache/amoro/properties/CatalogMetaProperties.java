@@ -95,6 +95,7 @@ public class CatalogMetaProperties {
 
   public static final String HIVE_METASTORE_JARS = "hive.metastore.jars";
 
-  // the preferred order when using catalog
-  public static final String CATALOG_PREFERRED_ORDER = "preferred-order";
+  // the preferred when choose catalog
+  public static final String PREFERRED_CATALOG = "preferred-catalog";
+  public static final String PREFERRED_LOAD_TABLE_CATALOG = "preferred-load-table-catalog";
 }
