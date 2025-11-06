@@ -24,13 +24,16 @@ import org.apache.amoro.DatabaseNotEmptyException;
 import org.apache.amoro.FormatCatalog;
 import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.NoSuchTableException;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.catalog.Identifier;
+import org.apache.paimon.catalog.PropertyChange;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class PaimonCatalog implements FormatCatalog {
 
@@ -99,6 +102,30 @@ public class PaimonCatalog implements FormatCatalog {
       throw new NoSuchDatabaseException(e);
     } catch (Catalog.DatabaseNotEmptyException e) {
       throw new DatabaseNotEmptyException(e);
+    }
+  }
+
+  @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties)
+      throws NoSuchDatabaseException {
+    try {
+      List<PropertyChange> changes = Lists.newArrayList();
+      properties.forEach((key, value) -> changes.add(PropertyChange.setProperty(key, value)));
+      catalog.alterDatabase(database, changes, false);
+    } catch (Catalog.DatabaseNotExistException e) {
+      throw new NoSuchDatabaseException(e);
+    }
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties)
+      throws NoSuchDatabaseException {
+    try {
+      List<PropertyChange> changes = Lists.newArrayList();
+      properties.forEach(property -> changes.add(PropertyChange.removeProperty(property)));
+      catalog.alterDatabase(database, changes, false);
+    } catch (Catalog.DatabaseNotExistException e) {
+      throw new NoSuchDatabaseException(e);
     }
   }
 

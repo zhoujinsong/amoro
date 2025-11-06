@@ -29,6 +29,7 @@ import org.apache.iceberg.exceptions.NoSuchTableException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class MixedCatalog implements FormatCatalog {
@@ -73,6 +74,18 @@ public class MixedCatalog implements FormatCatalog {
   @Override
   public void dropDatabase(String database) {
     catalog.dropDatabase(database);
+  }
+
+  @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties)
+      throws NoSuchDatabaseException {
+    catalog.setDatabaseProperties(database, properties);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties)
+      throws NoSuchDatabaseException {
+    catalog.removeDatabaseProperties(database, properties);
   }
 
   @Override

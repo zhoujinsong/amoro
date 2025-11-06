@@ -20,6 +20,7 @@ package org.apache.amoro.formats.iceberg;
 
 import org.apache.amoro.AmoroTable;
 import org.apache.amoro.FormatCatalog;
+import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.MixedFormatCatalogUtil;
 import org.apache.iceberg.Table;
@@ -31,6 +32,7 @@ import org.apache.iceberg.exceptions.NoSuchTableException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class IcebergCatalog implements FormatCatalog {
@@ -97,6 +99,26 @@ public class IcebergCatalog implements FormatCatalog {
     metaStore.doAs(
         () -> {
           asNamespaceCatalog().dropNamespace(Namespace.of(database));
+          return null;
+        });
+  }
+
+  @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties)
+      throws NoSuchDatabaseException {
+    metaStore.doAs(
+        () -> {
+          asNamespaceCatalog().setProperties(Namespace.of(database), properties);
+          return null;
+        });
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties)
+      throws NoSuchDatabaseException {
+    metaStore.doAs(
+        () -> {
+          asNamespaceCatalog().removeProperties(Namespace.of(database), properties);
           return null;
         });
   }

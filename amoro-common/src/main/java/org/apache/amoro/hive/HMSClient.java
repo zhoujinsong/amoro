@@ -59,6 +59,8 @@ public interface HMSClient {
 
   void createDatabase(Database db) throws TException;
 
+  void alterDatabase(String dbName, Database db) throws TException;
+
   void dropDatabase(String name, boolean deleteData, boolean ignoreUnknownDb, boolean cascade)
       throws TException;
 

@@ -32,6 +32,7 @@ import org.apache.iceberg.exceptions.NoSuchTableException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Catalog for mixed-format table create, drop, and load. */
 public interface MixedFormatCatalog {
@@ -87,6 +88,24 @@ public interface MixedFormatCatalog {
    * @throws NoSuchNamespaceException when database not exists.
    */
   Map<String, String> loadDatabaseMetadata(String databaseName);
+
+  /**
+   * Set metadata properties for a database.
+   *
+   * @param databaseName database name
+   * @param properties database properties to set
+   * @throws NoSuchNamespaceException when database not exists.
+   */
+  void setDatabaseProperties(String databaseName, Map<String, String> properties);
+
+  /**
+   * Remove metadata properties for a database.
+   *
+   * @param databaseName database name
+   * @param properties database properties to remove
+   * @throws NoSuchNamespaceException when database not exists.
+   */
+  void removeDatabaseProperties(String databaseName, Set<String> properties);
 
   /**
    * drop database from catalog.

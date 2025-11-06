@@ -46,6 +46,7 @@ import org.apache.amoro.properties.HiveTableProperties;
 import org.apache.amoro.properties.MetaTableProperties;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableMap;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.MixedTable;
 import org.apache.amoro.table.PrimaryKeySpec;
 import org.apache.amoro.table.TableBuilder;
@@ -88,6 +89,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** Implementation of {@link MixedFormatCatalog} to support Hive table as base store. */
@@ -170,6 +172,41 @@ public class MixedHiveCatalog implements MixedFormatCatalog {
       throw new NoSuchNamespaceException("Database: " + databaseName + " dose not exists.", e);
     } catch (TException | InterruptedException e) {
       throw new RuntimeException("Failed to drop database from HMS", e);
+    }
+  }
+
+  @Override
+  public void setDatabaseProperties(String databaseName, Map<String, String> properties) {
+    Map<String, String> parameters = Maps.newHashMap();
+
+    parameters.putAll(loadDatabaseMetadata(databaseName));
+    parameters.putAll(properties);
+    alterHiveDatabase(databaseName, parameters);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String databaseName, Set<String> properties) {
+    Map<String, String> parameters = Maps.newHashMap();
+
+    parameters.putAll(loadDatabaseMetadata(databaseName));
+    properties.forEach(key -> parameters.put(key, null));
+    alterHiveDatabase(databaseName, parameters);
+  }
+
+  private void alterHiveDatabase(String databaseName, Map<String, String> parameters) {
+    try {
+      hiveClientPool.run(
+          client -> {
+            client.alterDatabase(
+                databaseName,
+                HiveUtil.constructHiveDatabase(
+                    databaseName, parameters, tableMetaStore.getConfiguration()));
+            return null;
+          });
+    } catch (UnknownDBException | NoSuchObjectException e) {
+      throw new NoSuchNamespaceException("Database: " + databaseName + " dose not exists.", e);
+    } catch (TException | InterruptedException e) {
+      throw new RuntimeException("Failed to alter database:" + databaseName, e);
     }
   }
 

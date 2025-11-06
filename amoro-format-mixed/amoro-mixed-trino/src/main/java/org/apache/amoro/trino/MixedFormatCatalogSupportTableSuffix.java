@@ -63,6 +63,7 @@ import org.apache.iceberg.util.StructLikeMap;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -105,6 +106,16 @@ public class MixedFormatCatalogSupportTableSuffix implements MixedFormatCatalog 
   @Override
   public Map<String, String> loadDatabaseMetadata(String databaseName) {
     return mixedFormatCatalog.loadDatabaseMetadata(databaseName);
+  }
+
+  @Override
+  public void setDatabaseProperties(String databaseName, Map<String, String> properties) {
+    mixedFormatCatalog.setDatabaseProperties(databaseName, properties);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String databaseName, Set<String> properties) {
+    mixedFormatCatalog.removeDatabaseProperties(databaseName, properties);
   }
 
   @Override

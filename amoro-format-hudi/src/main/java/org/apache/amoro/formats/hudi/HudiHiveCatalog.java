@@ -142,6 +142,40 @@ public class HudiHiveCatalog implements FormatCatalog {
   }
 
   @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties) {
+    Map<String, String> parameters = new HashMap<>();
+
+    parameters.putAll(loadDatabaseMetadata(database));
+    parameters.putAll(properties);
+    alterHiveDatabase(database, parameters);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties) {
+    Map<String, String> parameters = new HashMap<>();
+
+    parameters.putAll(loadDatabaseMetadata(database));
+    properties.forEach(key -> parameters.put(key, null));
+    alterHiveDatabase(database, parameters);
+  }
+
+  private void alterHiveDatabase(String database, Map<String, String> parameters) {
+    try {
+      hiveClientPool.run(
+          client -> {
+            client.alterDatabase(
+                database,
+                HiveUtil.constructHiveDatabase(database, parameters, metaStore.getConfiguration()));
+            return null;
+          });
+    } catch (UnknownDBException | NoSuchObjectException e) {
+      throw new NoSuchDatabaseException("Database: " + database + " dose not exists.", e);
+    } catch (TException | InterruptedException e) {
+      throw new RuntimeException("Failed to alter database from HMS", e);
+    }
+  }
+
+  @Override
   public boolean dropTable(String database, String table, boolean purge) {
     Optional<Table> optHiveTable = loadHoodieHiveTable(database, table);
     if (!optHiveTable.isPresent()) {

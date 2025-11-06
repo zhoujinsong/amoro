@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Hudi catalog implement in hadoop filesystem. */
 public class HudiHadoopCatalog implements FormatCatalog {
@@ -143,6 +144,18 @@ public class HudiHadoopCatalog implements FormatCatalog {
           fs.delete(path, true);
           return null;
         });
+  }
+
+  @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties)
+      throws NoSuchDatabaseException {
+    throw new UnsupportedOperationException("Cannot set properties for database: " + database);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties)
+      throws NoSuchDatabaseException {
+    throw new UnsupportedOperationException("Cannot remove properties from database: " + database);
   }
 
   @Override

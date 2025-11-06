@@ -66,6 +66,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -142,6 +143,16 @@ public class BasicMixedCatalog implements MixedFormatCatalog {
   @Override
   public Map<String, String> loadDatabaseMetadata(String databaseName) {
     throw new UnsupportedOperationException("Do not support loading database metadata");
+  }
+
+  @Override
+  public void setDatabaseProperties(String databaseName, Map<String, String> properties) {
+    throw new UnsupportedOperationException("Do not support setting database metadata properties");
+  }
+
+  @Override
+  public void removeDatabaseProperties(String databaseName, Set<String> properties) {
+    throw new UnsupportedOperationException("Do not support removing database metadata properties");
   }
 
   @Override

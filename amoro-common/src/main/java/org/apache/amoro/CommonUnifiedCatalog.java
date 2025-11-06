@@ -123,10 +123,19 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
 
   @Override
   public void dropDatabase(String database) {
-    if (!listTableIdentifiers(database).isEmpty()) {
-      throw new IllegalStateException("Database: " + database + " is not empty.");
-    }
     findFirstFormatCatalog(TableFormat.values()).dropDatabase(database);
+  }
+
+  @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties)
+      throws NoSuchDatabaseException {
+    findFirstFormatCatalog(TableFormat.values()).setDatabaseProperties(database, properties);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties)
+      throws NoSuchDatabaseException {
+    findFirstFormatCatalog(TableFormat.values()).removeDatabaseProperties(database, properties);
   }
 
   @Override

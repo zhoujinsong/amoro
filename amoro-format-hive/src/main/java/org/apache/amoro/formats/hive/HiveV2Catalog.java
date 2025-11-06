@@ -24,6 +24,7 @@ import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.NoSuchTableException;
 import org.apache.amoro.hive.CachedHiveClientPool;
 import org.apache.amoro.hive.HMSClient;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
@@ -41,6 +42,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class HiveV2Catalog implements FormatCatalog {
 
@@ -145,6 +147,40 @@ public class HiveV2Catalog implements FormatCatalog {
       // pass
     } catch (TException | InterruptedException e) {
       throw new RuntimeException("Failed to drop database from HMS", e);
+    }
+  }
+
+  @Override
+  public void setDatabaseProperties(String database, Map<String, String> properties) {
+    Map<String, String> parameters = Maps.newHashMap();
+
+    parameters.putAll(loadDatabaseMetadata(database));
+    parameters.putAll(properties);
+    alterHiveDatabase(database, parameters);
+  }
+
+  @Override
+  public void removeDatabaseProperties(String database, Set<String> properties) {
+    Map<String, String> parameters = Maps.newHashMap();
+
+    parameters.putAll(loadDatabaseMetadata(database));
+    properties.forEach(key -> parameters.put(key, null));
+    alterHiveDatabase(database, parameters);
+  }
+
+  private void alterHiveDatabase(String database, Map<String, String> parameters) {
+    try {
+      hiveClientPool.run(
+          client -> {
+            client.alterDatabase(
+                database,
+                HiveUtil.constructHiveDatabase(database, parameters, metaStore.getConfiguration()));
+            return null;
+          });
+    } catch (UnknownDBException | NoSuchObjectException e) {
+      throw new NoSuchDatabaseException("Database: " + database + " dose not exists.", e);
+    } catch (TException | InterruptedException e) {
+      throw new RuntimeException("Failed to alter database from HMS", e);
     }
   }
 

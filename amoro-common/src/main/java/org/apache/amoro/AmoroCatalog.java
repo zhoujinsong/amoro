@@ -20,6 +20,7 @@ package org.apache.amoro;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Base Catalog interface for Amoro. */
 public interface AmoroCatalog {
@@ -81,6 +82,30 @@ public interface AmoroCatalog {
    * @throws NoSuchDatabaseException when database not exists.
    */
   void dropDatabase(String database);
+
+  /**
+   * Set a collection of properties on a database in the catalog.
+   *
+   * <p>Properties that are not in the given map are not modified or removed by this method.
+   *
+   * @param database database name.
+   * @param properties a collection of metadata to apply to the namespace
+   * @throws NoSuchDatabaseException when database not exists.
+   */
+  void setDatabaseProperties(String database, Map<String, String> properties)
+      throws NoSuchDatabaseException;
+
+  /**
+   * Remove a set of property keys from a database in the catalog.
+   *
+   * <p>Properties that are not in the given set are not modified or removed by this method.
+   *
+   * @param database database name.
+   * @param properties a collection of metadata to apply to the namespace
+   * @throws NoSuchDatabaseException when database not exists.
+   */
+  void removeDatabaseProperties(String database, Set<String> properties)
+      throws NoSuchDatabaseException;
 
   /**
    * load table from catalog.

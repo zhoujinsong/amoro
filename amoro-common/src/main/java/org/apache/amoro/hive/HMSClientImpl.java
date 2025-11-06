@@ -103,6 +103,11 @@ public class HMSClientImpl implements HMSClient {
   }
 
   @Override
+  public void alterDatabase(String dbName, Database db) throws TException {
+    getClient().alterDatabase(dbName, db);
+  }
+
+  @Override
   public void dropDatabase(
       String name, boolean deleteData, boolean ignoreUnknownDb, boolean cascade) throws TException {
     getClient().dropDatabase(name, deleteData, ignoreUnknownDb, cascade);
