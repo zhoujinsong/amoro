@@ -17,8 +17,8 @@
 # limitations under the License.
 ################################################################################
 
-OLD="tclake-0.9.2-SNAPSHOT"
-NEW="tclake-0.9.0-SNAPSHOT"
+OLD="tclake-0.9.0-SNAPSHOT"
+NEW="tclake-0.9.0"
 
 
 HERE=` basename "$PWD"`
