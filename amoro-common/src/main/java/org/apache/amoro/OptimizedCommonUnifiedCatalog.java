@@ -18,12 +18,15 @@
 
 package org.apache.amoro;
 
+import org.apache.amoro.properties.CatalogMetaProperties;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Sets;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class OptimizedCommonUnifiedCatalog extends CommonUnifiedCatalog {
@@ -57,7 +60,28 @@ public class OptimizedCommonUnifiedCatalog extends CommonUnifiedCatalog {
     if (!CatalogUtil.supportOptimizedMode(formatCatalogs.keySet())) {
       return super.listTableIdentifiers(database);
     }
-    return getHiveV2Catalog().listTables(database).stream()
+    Set<String> tableNames = Sets.newHashSet(getHiveV2Catalog().listTables(database));
+    // Filter change store for mixed formats
+    if ((formatCatalogs.containsKey(TableFormat.MIXED_ICEBERG)
+        || formatCatalogs.containsKey(TableFormat.MIXED_HIVE))) {
+      String separator =
+          catalogProperties.getOrDefault(
+              CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR,
+              CatalogMetaProperties.MIXED_FORMAT_TABLE_STORE_SEPARATOR_DEFAULT);
+      String changeStoreSuffix = separator + "change" + separator;
+      Set<String> returnTables = Sets.newHashSet();
+      final Set<String> allTables = tableNames;
+      allTables.forEach(
+          name -> {
+            if (!name.endsWith(changeStoreSuffix)
+                || !allTables.contains(
+                    name.substring(0, name.length() - changeStoreSuffix.length()))) {
+              returnTables.add(name);
+            }
+          });
+      tableNames = returnTables;
+    }
+    return tableNames.stream()
         .map(
             tableName -> {
               return TableIdentifier.of(catalogName, database, tableName);

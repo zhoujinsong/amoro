@@ -24,8 +24,6 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -40,14 +38,13 @@ import java.util.stream.Stream;
 
 public class CommonUnifiedCatalog implements UnifiedCatalog {
 
-  private static final Logger LOG = LoggerFactory.getLogger(CommonUnifiedCatalog.class);
   protected final String catalogName;
   private final String metaStoreType;
   private final Supplier<CatalogMeta> metaSupplier;
   // Client side catalog properties
   private final Map<String, String> clientProperties;
   // Catalog properties after merging the server and client
-  private Map<String, String> catalogProperties;
+  protected Map<String, String> catalogProperties;
   private CatalogMeta meta;
   private TableMetaStore tableMetaStore;
   protected Map<TableFormat, FormatCatalog> formatCatalogs = Maps.newHashMap();
@@ -186,7 +183,8 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
     Map<String, TableFormat> tableNameToFormat = Maps.newHashMap();
     for (TableFormat format : formats) {
       if (formatCatalogs.containsKey(format)) {
-        Stream<String> nameStream = formatCatalogs.get(format).listTables(database).stream();
+        List<String> nameList = formatCatalogs.get(format).listTables(database);
+        Stream<String> nameStream = nameList.stream();
         // Filter change store for mixed formats
         if ((formatCatalogs.containsKey(TableFormat.MIXED_ICEBERG)
                 || formatCatalogs.containsKey(TableFormat.MIXED_HIVE))
