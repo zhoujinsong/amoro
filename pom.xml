@@ -29,7 +29,7 @@
 
     <groupId>org.apache.amoro</groupId>
     <artifactId>amoro-parent</artifactId>
-    <version>0.9.0-tclake-2-SNAPSHOT</version>
+    <version>0.9.0-tclake-3-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Amoro Project Parent</name>
@@ -78,7 +78,7 @@
         <maven.compiler.target>${java.target.version}</maven.compiler.target>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.build.outputTimestamp>2024-06-27T08:00:00Z</project.build.outputTimestamp>
+        <project.build.outputTimestamp>2026-03-02T12:31:01Z</project.build.outputTimestamp>
         <root.dir>${project.basedir}</root.dir>
         <jacoco.flink.skip>false</jacoco.flink.skip>
 
