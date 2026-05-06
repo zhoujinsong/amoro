@@ -415,7 +415,7 @@ public class AmoroServiceContainer {
     final TProtocolFactory protocolFactory = new TBinaryProtocol.Factory();
     final TProtocolFactory inputProtoFactory =
         new TBinaryProtocol.Factory(true, true, maxMessageSize, maxMessageSize);
-    TTransportFactory transportFactory = new TFramedTransport.Factory();
+    TTransportFactory transportFactory = new TFramedTransport.Factory((int) maxMessageSize);
     TMultiplexedProcessor multiplexedProcessor = new TMultiplexedProcessor();
     multiplexedProcessor.registerProcessor(processorName, processor);
     THsHaServer.Args args =
