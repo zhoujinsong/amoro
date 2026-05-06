@@ -411,7 +411,7 @@ public class AmoroServiceContainer {
       throws TTransportException {
     LOG.info("Initializing thrift server: {}", processorName);
     LOG.info("Starting {} thrift server on port: {}", processorName, port);
-    TNonblockingServerSocket serverTransport = getServerSocket(bindHost, port);
+    TNonblockingServerSocket serverTransport = getServerSocket(bindHost, port, maxMessageSize);
     final TProtocolFactory protocolFactory = new TBinaryProtocol.Factory();
     final TProtocolFactory inputProtoFactory =
         new TBinaryProtocol.Factory(true, true, maxMessageSize, maxMessageSize);
@@ -425,6 +425,10 @@ public class AmoroServiceContainer {
             .protocolFactory(protocolFactory)
             .inputProtocolFactory(inputProtoFactory)
             .executorService(executorService);
+    LOG.info(
+        "The max message size for the {} thrift server is: {} bytes",
+        processorName,
+        maxMessageSize);
     LOG.info(
         "The number of selector threads for the {} thrift server is: {}",
         processorName,
@@ -543,11 +547,19 @@ public class AmoroServiceContainer {
     }
   }
 
-  private TNonblockingServerSocket getServerSocket(String bindHost, int portNum)
-      throws TTransportException {
-    InetSocketAddress serverAddress;
-    serverAddress = new InetSocketAddress(bindHost, portNum);
-    return new TNonblockingServerSocket(serverAddress);
+  private TNonblockingServerSocket getServerSocket(
+      String bindHost, int portNum, long maxMessageSize) throws TTransportException {
+    InetSocketAddress serverAddress = new InetSocketAddress(bindHost, portNum);
+    // Align the transport-level max frame size with maxMessageSize; otherwise the server would
+    // still be capped by the shaded thrift default value (16384000 bytes) and throw
+    // "Read a frame size of N, which is bigger than the maximum allowable frame size ... for ALL
+    // connections" even if thrift-server.max-message-size has been configured.
+    int maxFrameSize = (int) Math.min(maxMessageSize, Integer.MAX_VALUE);
+    TNonblockingServerSocket.NonblockingAbstractServerSocketArgs socketArgs =
+        new TNonblockingServerSocket.NonblockingAbstractServerSocketArgs()
+            .bindAddr(serverAddress)
+            .maxFrameSize(maxFrameSize);
+    return new TNonblockingServerSocket(socketArgs);
   }
 
   @SuppressWarnings("unchecked")
