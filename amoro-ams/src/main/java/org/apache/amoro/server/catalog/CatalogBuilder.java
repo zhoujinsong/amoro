@@ -45,7 +45,8 @@ public class CatalogBuilder {
                   TableFormat.ICEBERG,
                   TableFormat.MIXED_ICEBERG,
                   TableFormat.PAIMON,
-                  TableFormat.HUDI),
+                  TableFormat.HUDI,
+                  TableFormat.LANCE),
           CATALOG_TYPE_GLUE, Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG),
           CATALOG_TYPE_CUSTOM, Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG),
           CATALOG_TYPE_HIVE,
@@ -54,7 +55,8 @@ public class CatalogBuilder {
                   TableFormat.MIXED_ICEBERG,
                   TableFormat.MIXED_HIVE,
                   TableFormat.PAIMON,
-                  TableFormat.HUDI),
+                  TableFormat.HUDI,
+                  TableFormat.LANCE),
           CATALOG_TYPE_AMS, Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG));
 
   public static ServerCatalog buildServerCatalog(

@@ -23,6 +23,7 @@ import org.apache.amoro.AmoroTable;
 import org.apache.amoro.IcebergActions;
 import org.apache.amoro.ServerTableIdentifier;
 import org.apache.amoro.StateField;
+import org.apache.amoro.TableFormat;
 import org.apache.amoro.api.BlockableOperation;
 import org.apache.amoro.config.OptimizingConfig;
 import org.apache.amoro.config.TableConfiguration;
@@ -371,6 +372,9 @@ public class DefaultOptimizingState extends StatedPersistentBase implements Proc
   }
 
   private boolean refreshSnapshots(AmoroTable<?> amoroTable) {
+    if (TableFormat.LANCE.equals(amoroTable.format())) {
+      return refreshLanceSnapshots(amoroTable);
+    }
     MixedTable table = (MixedTable) amoroTable.originalTable();
     tableSummaryMetrics.refreshSnapshots(table);
     long lastSnapshotId = currentSnapshotId;
@@ -397,6 +401,31 @@ public class DefaultOptimizingState extends StatedPersistentBase implements Proc
             "Refreshing table {} with base snapshot id {}", tableIdentifier, currentSnapshotId);
         return true;
       }
+    }
+    return false;
+  }
+
+  /**
+   * Lance 表的快照刷新逻辑，使用 version id 作为 snapshot id。
+   *
+   * @param amoroTable Lance 表
+   * @return 是否有快照变更
+   */
+  private boolean refreshLanceSnapshots(AmoroTable<?> amoroTable) {
+    try {
+      Object dataset = amoroTable.originalTable();
+      // 通过反射调用 Lance Dataset 的 getVersion().getId() 获取版本号
+      Object version = dataset.getClass().getMethod("getVersion").invoke(dataset);
+      long versionId = (long) version.getClass().getMethod("getId").invoke(version);
+      long lastSnapshotId = currentSnapshotId;
+      currentSnapshotId = versionId;
+      if (currentSnapshotId != lastSnapshotId) {
+        LOG.debug(
+            "Refreshing Lance table {} with version id {}", tableIdentifier, currentSnapshotId);
+        return true;
+      }
+    } catch (Exception e) {
+      LOG.warn("Failed to refresh Lance table {} snapshots", tableIdentifier, e);
     }
     return false;
   }

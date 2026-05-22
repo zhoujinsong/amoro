@@ -103,6 +103,8 @@ public class OptimizedCommonUnifiedCatalog extends CommonUnifiedCatalog {
       return TableFormat.ICEBERG;
     } else if (CatalogUtil.isHoodieTableFormat(amoroTable.properties())) {
       return TableFormat.HUDI;
+    } else if (CatalogUtil.isLanceTableFormat(amoroTable.properties())) {
+      return TableFormat.LANCE;
     } else {
       return TableFormat.HIVE_V2;
     }

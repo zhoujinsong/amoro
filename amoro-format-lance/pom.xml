@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Licensed to the Apache Software Foundation (ASF) under one
+  ~ or more contributor license agreements.  See the NOTICE file
+  ~ distributed with this work for additional information
+  ~ regarding copyright ownership.  The ASF licenses this file
+  ~ to you under the Apache License, Version 2.0 (the
+  ~ "License"); you may not use this file except in compliance
+  ~ with the License.  You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.apache.amoro</groupId>
+        <artifactId>amoro-parent</artifactId>
+        <version>tclake-0.9.0-160-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>amoro-format-lance</artifactId>
+    <name>Amoro Project Lance Format</name>
+    <url>https://amoro.apache.org</url>
+    <profiles>
+    </profiles>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.amoro</groupId>
+            <artifactId>amoro-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.amoro</groupId>
+            <artifactId>amoro-shade-guava-32</artifactId>
+        </dependency>
+
+        <!-- Lance format dependencies would go here -->
+        <dependency>
+            <groupId>org.lance</groupId>
+            <artifactId>lance-core</artifactId>
+            <version>${lance.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.lance</groupId>
+            <artifactId>lance-namespace-hive3</artifactId>
+            <version>${lance-namespace-impls.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.lance</groupId>
+            <artifactId>lance-namespace-core</artifactId>
+            <version>${lance-namespace.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.lance</groupId>
+            <artifactId>lance-namespace-apache-client</artifactId>
+            <version>${lance-namespace.version}</version>
+        </dependency>
+
+        <!-- lance-core 的传递依赖，用于加载 JNI native 库 -->
+        <dependency>
+            <groupId>org.questdb</groupId>
+            <artifactId>jar-jni</artifactId>
+            <version>1.1.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-vector</artifactId>
+            <version>15.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-memory-netty</artifactId>
+            <version>15.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.arrow</groupId>
+            <artifactId>arrow-c-data</artifactId>
+            <version>15.0.0</version>
+        </dependency>
+
+        <!-- Netty dependencies for Arrow memory -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-buffer</artifactId>
+            <version>4.1.100.Final</version>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-common</artifactId>
+            <version>4.1.100.Final</version>
+        </dependency>
+
+        <!-- Test dependencies -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.amoro</groupId>
+            <artifactId>amoro-common</artifactId>
+            <version>${project.version}</version>
+            <classifier>tests</classifier>
+            <scope>test</scope>
+        </dependency>
+        <!-- Iceberg 格式依赖，用于 CommonUnifiedCatalog 集成测试 -->
+        <dependency>
+            <groupId>org.apache.amoro</groupId>
+            <artifactId>amoro-format-iceberg</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.amoro</groupId>
+            <artifactId>amoro-format-hive</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Iceberg Hive Metastore 依赖，提供 org.apache.iceberg.hive.HiveCatalog 实现 -->
+        <dependency>
+            <groupId>org.apache.iceberg</groupId>
+            <artifactId>iceberg-hive-metastore</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Hive 测试依赖，用于 HMSMockServer -->
+        <dependency>
+            <groupId>org.apache.hive</groupId>
+            <artifactId>hive-metastore</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.derby</groupId>
+            <artifactId>derby</artifactId>
+            <version>10.14.2.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- COS 存储依赖，用于 COS 集成测试时 HMS 识别 cosn:// 协议 -->
+        <dependency>
+            <groupId>com.qcloud.cos</groupId>
+            <artifactId>hadoop-cos</artifactId>
+            <version>3.4.0-8.3.20</version>
+        </dependency>
+        <!-- COS SDK，LanceCOSCredentialsProvider 使用其 COSCredentials / SessionCredentials 接口读取 TCLake 动态密钥 -->
+        <dependency>
+            <groupId>com.qcloud</groupId>
+            <artifactId>cos_api-bundle</artifactId>
+            <version>5.6.246.3</version>
+        </dependency>
+    </dependencies>
+
+</project>

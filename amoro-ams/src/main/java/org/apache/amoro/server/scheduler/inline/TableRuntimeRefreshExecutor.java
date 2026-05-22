@@ -19,6 +19,7 @@
 package org.apache.amoro.server.scheduler.inline;
 
 import org.apache.amoro.AmoroTable;
+import org.apache.amoro.TableFormat;
 import org.apache.amoro.TableRuntime;
 import org.apache.amoro.config.TableConfiguration;
 import org.apache.amoro.optimizing.plan.AbstractOptimizingEvaluator;
@@ -45,6 +46,11 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
     super(tableService, poolSize);
     this.interval = interval;
     this.maxPendingPartitions = maxPendingPartitions;
+  }
+
+  @Override
+  protected boolean formatSupported(TableFormat format) {
+    return super.formatSupported(format) || TableFormat.LANCE.equals(format);
   }
 
   @Override
@@ -113,9 +119,16 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
       DefaultTableRuntime defaultTableRuntime = (DefaultTableRuntime) tableRuntime;
 
       DefaultOptimizingState optimizingState = defaultTableRuntime.getOptimizingState();
+      AmoroTable<?> table = loadTable(tableRuntime);
+
+      // Lance 表走独立的刷新逻辑，不参与优化评估
+      if (TableFormat.LANCE.equals(table.format())) {
+        executeLanceRefresh(defaultTableRuntime, optimizingState, table);
+        return;
+      }
+
       long lastOptimizedSnapshotId = optimizingState.getLastOptimizedSnapshotId();
       long lastOptimizedChangeSnapshotId = optimizingState.getLastOptimizedChangeSnapshotId();
-      AmoroTable<?> table = loadTable(tableRuntime);
       optimizingState.refresh(table);
       MixedTable mixedTable = (MixedTable) table.originalTable();
       if ((mixedTable.isKeyedTable()
@@ -129,6 +142,54 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
       }
     } catch (Throwable throwable) {
       logger.error("Refreshing table {} failed.", tableRuntime.getTableIdentifier(), throwable);
+    }
+  }
+
+  /** Lance 表的刷新逻辑：刷新快照 + 通过反射获取 ManifestSummary 构建 tableSummary。 */
+  private void executeLanceRefresh(
+      DefaultTableRuntime tableRuntime,
+      DefaultOptimizingState optimizingState,
+      AmoroTable<?> table) {
+    try {
+      optimizingState.refresh(table);
+      // 通过反射获取 Lance Dataset 的统计信息，避免直接依赖 lance 模块
+      Object dataset = table.originalTable();
+      Object version = dataset.getClass().getMethod("getVersion").invoke(dataset);
+      Object summary = version.getClass().getMethod("getManifestSummary").invoke(version);
+      long totalFilesSize =
+          (long) summary.getClass().getMethod("getTotalFilesSize").invoke(summary);
+      long totalDataFiles =
+          (long) summary.getClass().getMethod("getTotalDataFiles").invoke(summary);
+      long totalRows = (long) summary.getClass().getMethod("getTotalRows").invoke(summary);
+      long totalDeletionFiles =
+          (long) summary.getClass().getMethod("getTotalDeletionFiles").invoke(summary);
+      long totalDataFileRows =
+          (long) summary.getClass().getMethod("getTotalDataFileRows").invoke(summary);
+      long totalDeletionFileRows =
+          (long) summary.getClass().getMethod("getTotalDeletionFileRows").invoke(summary);
+
+      AbstractOptimizingEvaluator.PendingInput tableSummary =
+          AbstractOptimizingEvaluator.PendingInput.ofLance(
+              (int) totalDataFiles,
+              totalFilesSize,
+              totalRows,
+              (int) totalDeletionFiles,
+              totalDataFileRows,
+              totalDeletionFileRows);
+      optimizingState.setTableSummary(tableSummary);
+      logger.info(
+          "Refreshed Lance table {} summary: dataFiles={}, deletionFiles={}, fileSize={},"
+              + " dataRows={}, deletionRows={}, totalRows={}",
+          tableRuntime.getTableIdentifier(),
+          totalDataFiles,
+          totalDeletionFiles,
+          totalFilesSize,
+          totalDataFileRows,
+          totalDeletionFileRows,
+          totalRows);
+    } catch (Throwable throwable) {
+      logger.error(
+          "Refreshing Lance table {} failed.", tableRuntime.getTableIdentifier(), throwable);
     }
   }
 }

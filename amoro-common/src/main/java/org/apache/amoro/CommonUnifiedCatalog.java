@@ -143,6 +143,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
             TableFormat.PAIMON,
             TableFormat.HUDI,
             TableFormat.MIXED_HIVE,
+            TableFormat.LANCE,
             TableFormat.HIVE_V2)
         .map(
             formatCatalog -> {
@@ -165,6 +166,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
 
   @Override
   public List<TableIDWithFormat> listTables(String database) {
+    // 非 hive 表要放在 TableFormat.HIVE_V2 表前面，不然会误判为 hive 表
     TableFormat[] formats =
         new TableFormat[] {
           TableFormat.MIXED_ICEBERG,
@@ -172,7 +174,8 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
           TableFormat.PAIMON,
           TableFormat.HUDI,
           TableFormat.MIXED_HIVE,
-          TableFormat.HIVE_V2
+          TableFormat.LANCE,
+          TableFormat.HIVE_V2,
         };
 
     String separator =

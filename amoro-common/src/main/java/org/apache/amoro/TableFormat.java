@@ -50,6 +50,7 @@ public final class TableFormat implements Serializable {
   public static final TableFormat MIXED_HIVE = register("MIXED_HIVE");
   public static final TableFormat PAIMON = register("PAIMON");
   public static final TableFormat HUDI = register("HUDI");
+  public static final TableFormat LANCE = register("LANCE");
 
   public static final Set<String> HIVE_V2_FILE_FORMATS =
       new HashSet<>(

@@ -256,7 +256,11 @@ public class CatalogUtil {
     // TODO: support more table formats
     Set<TableFormat> supportFormats =
         Sets.newHashSet(
-            TableFormat.MIXED_ICEBERG, TableFormat.ICEBERG, TableFormat.HUDI, TableFormat.HIVE_V2);
+            TableFormat.MIXED_ICEBERG,
+            TableFormat.ICEBERG,
+            TableFormat.HUDI,
+            TableFormat.HIVE_V2,
+            TableFormat.LANCE);
     return supportFormats.containsAll(tableFormats);
   }
 
@@ -298,5 +302,13 @@ public class CatalogUtil {
     return TableFormat.HUDI.name().equalsIgnoreCase(tableFormat)
         || "hudi".equalsIgnoreCase(properties.getOrDefault(SPARK_SOURCE_PROVIDER, ""))
         || "hudi".equalsIgnoreCase(properties.getOrDefault(FLINK_CONNECTOR, ""));
+  }
+
+  public static boolean isLanceTableFormat(Map<String, String> properties) {
+    // lance 的 table-format 字段不会存在 HMS，可以通过 table-type 来判断
+    String tableFormat = properties.get(CatalogMetaProperties.TABLE_FORMAT);
+    String tableType = properties.getOrDefault(BaseMetastoreTableOperations.TABLE_TYPE_PROP, "");
+    return TableFormat.LANCE.name().equalsIgnoreCase(tableFormat)
+        || TableFormat.LANCE.name().equalsIgnoreCase(tableType);
   }
 }

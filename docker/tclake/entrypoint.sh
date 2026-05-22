@@ -70,7 +70,7 @@ EOF
   fi
 }
 
-function sartAMS() {
+function startAMS() {
   echo "Start Amoro Management Service"
   exec "$AMORO_HOME/bin/ams.sh" "start-foreground"
 }
@@ -89,5 +89,5 @@ elif [ "$1" == "optimizer" ]; then
   echo "Start Amoro Optimizer"
   exec "$AMORO_HOME/bin/optimizer.sh" "start-foreground" "${args[@]}"
 else
-  sartAMS
+  startAMS
 fi

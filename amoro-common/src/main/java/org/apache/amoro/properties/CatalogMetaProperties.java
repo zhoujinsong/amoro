@@ -33,6 +33,11 @@ public class CatalogMetaProperties {
   public static final String STORAGE_CONFIGS_VALUE_TYPE_HADOOP = "Hadoop";
   public static final String STORAGE_CONFIGS_VALUE_TYPE_S3 = "S3";
   public static final String STORAGE_CONFIGS_VALUE_TYPE_OSS = "OSS";
+  // Lance storage on cos properties
+  public static final String COS_STORAGE_CONFIGS_REGION = "cos_region";
+  public static final String COS_STORAGE_CONFIGS_SECRET_ID = "cos_secret_id";
+  public static final String COS_STORAGE_CONFIGS_SECRET_KEY = "cos_secret_key";
+  public static final String COS_STORAGE_CONFIGS_SECURITY_TOKEN = "cos_security_token";
 
   public static final String AUTH_CONFIGS_KEY_TYPE = "auth.type";
   public static final String AUTH_CONFIGS_KEY_PRINCIPAL = "auth.kerberos.principal";

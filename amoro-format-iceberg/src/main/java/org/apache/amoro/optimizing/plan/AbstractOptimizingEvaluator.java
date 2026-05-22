@@ -205,6 +205,37 @@ public abstract class AbstractOptimizingEvaluator {
 
     public PendingInput() {}
 
+    /**
+     * 为 Lance 表构建 PendingInput，healthScore 始终为 -1。 删除文件一律视为 positionalDeleteFile。
+     *
+     * @param totalDataFiles 数据文件数
+     * @param totalFilesSize 总文件大小（字节）
+     * @param totalRows 总记录数（数据行 + 删除行）
+     * @param totalDeletionFiles 删除文件数（视为 positionalDeleteFile）
+     * @param totalDataFileRows 数据文件行数
+     * @param totalDeletionFileRows 删除文件行数（视为 positionalDeleteFileRecords）
+     * @return PendingInput 实例
+     */
+    public static PendingInput ofLance(
+        int totalDataFiles,
+        long totalFilesSize,
+        long totalRows,
+        int totalDeletionFiles,
+        long totalDataFileRows,
+        long totalDeletionFileRows) {
+      PendingInput input = new PendingInput();
+      input.totalFileCount = totalDataFiles + totalDeletionFiles;
+      input.totalFileSize = totalFilesSize; // Lance 拿不到删除文件大小，统一使用数据文件总大小
+      input.totalFileRecords = totalRows;
+      input.dataFileCount = totalDataFiles;
+      input.dataFileSize = totalFilesSize;
+      input.dataFileRecords = totalDataFileRows;
+      input.positionalDeleteFileCount = totalDeletionFiles;
+      input.positionalDeleteFileRecords = totalDeletionFileRows;
+      input.healthScore = -1;
+      return input;
+    }
+
     public PendingInput(Collection<PartitionEvaluator> evaluators) {
       initialize(evaluators);
       totalFileCount = dataFileCount + positionalDeleteFileCount + equalityDeleteFileCount;

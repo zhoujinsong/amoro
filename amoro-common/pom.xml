@@ -24,7 +24,7 @@
     <parent>
         <groupId>org.apache.amoro</groupId>
         <artifactId>amoro-parent</artifactId>
-        <version>0.9.0-tclake-3-SNAPSHOT</version>
+        <version>tclake-0.9.0-160-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -200,7 +200,8 @@
             <properties>
                 <tclake-cos-credential.version>0.2</tclake-cos-credential.version>
                 <tclake-iceberg-catalog.version>0.2</tclake-iceberg-catalog.version>
-                <iceberg-plugin.version>0.2</iceberg-plugin.version>
+                <iceberg-plugin.version>0.2.3-SNAPSHOT</iceberg-plugin.version>
+                <tclake-io-runtime.version>0.2.3-SNAPSHOT</tclake-io-runtime.version>
             </properties>
 
             <dependencies>
@@ -255,6 +256,12 @@
                     <groupId>com.tencent.cloud.tclake</groupId>
                     <artifactId>tclake-iceberg-plugin</artifactId>
                     <version>${iceberg-plugin.version}</version>
+                </dependency>
+
+                <dependency>
+                    <groupId>com.tencent.cloud.tclake</groupId>
+                    <artifactId>tclake-io-runtime</artifactId>
+                    <version>${tclake-io-runtime.version}</version>
                 </dependency>
             </dependencies>
         </profile>

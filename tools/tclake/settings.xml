@@ -65,6 +65,22 @@
         </server>
     </servers>
 
+    <!-- 不配置 mirror：
+         - 公共构件（org.apache:apache:pom 等）走 pom.xml 中声明的 central / gcs-maven-central-mirror / apache-releases 直连拉取
+         - 腾讯内部 SNAPSHOT（tclake_plugins 等）走 tclake-snapshot-repo 直连拉取
+         - 腾讯内部 release 走 tclake-repo 直连拉取
+         外部 snapshot 仓库（apache.snapshots 等）的无效轮询仅产生 WARNING，不阻塞构建。 -->
+    <!--
+    <mirrors>
+        <mirror>
+            <id>tclake-mirror-all</id>
+            <name>Tencent tclake maven mirror</name>
+            <url>https://mirrors.tencent.com/repository/maven/tclake</url>
+            <mirrorOf>external:*,!tclake-repo,!tclake-snapshot-repo</mirrorOf>
+        </mirror>
+    </mirrors>
+    -->
+
     <activeProfiles>
         <activeProfile>env-dev</activeProfile>
     </activeProfiles>
