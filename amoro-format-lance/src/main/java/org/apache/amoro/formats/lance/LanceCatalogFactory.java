@@ -22,6 +22,7 @@ import org.apache.amoro.FormatCatalog;
 import org.apache.amoro.FormatCatalogFactory;
 import org.apache.amoro.TableFormat;
 import org.apache.amoro.properties.CatalogMetaProperties;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
@@ -43,21 +44,23 @@ public class LanceCatalogFactory implements FormatCatalogFactory {
       String metastoreType,
       Map<String, String> properties,
       TableMetaStore metaStore) {
+    Map<String, String> lanceCatalogProperties = Maps.newHashMap(properties);
     BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
-    if (!properties.containsKey(Hive3NamespaceConfig.ROOT)) {
-      String warehouse = properties.get(CatalogMetaProperties.KEY_WAREHOUSE);
-      properties.put(Hive3NamespaceConfig.ROOT, LanceProperties.normalizeRootUrl(warehouse));
+    String warehouse = lanceCatalogProperties.get(CatalogMetaProperties.KEY_WAREHOUSE);
+    if (warehouse != null && !warehouse.isEmpty()) {
+      lanceCatalogProperties.putIfAbsent(
+          Hive3NamespaceConfig.ROOT, LanceProperties.normalizeRootUrl(warehouse));
     }
 
     if (CatalogMetaProperties.CATALOG_TYPE_HADOOP.equalsIgnoreCase(metastoreType)) {
-      LanceNamespace namespace = LanceNamespace.connect("dir", properties, allocator);
-      return new LanceDirectoryCatalog(namespace, properties, allocator);
+      LanceNamespace namespace = LanceNamespace.connect("dir", lanceCatalogProperties, allocator);
+      return new LanceDirectoryCatalog(namespace, lanceCatalogProperties, allocator);
     } else if (CatalogMetaProperties.CATALOG_TYPE_HIVE.equalsIgnoreCase(metastoreType)) {
       Hive3Namespace namespace = new Hive3Namespace();
       namespace.setHadoopConf(metaStore.getConfiguration());
-      namespace.initialize(properties, allocator);
+      namespace.initialize(lanceCatalogProperties, allocator);
       return new LanceHiveCatalog(
-          catalogName, namespace, properties, allocator, metaStore.getConfiguration());
+          catalogName, namespace, lanceCatalogProperties, allocator, metaStore.getConfiguration());
     }
     throw new IllegalArgumentException(
         "Un-supported metastore type:" + metastoreType + " for Lance");

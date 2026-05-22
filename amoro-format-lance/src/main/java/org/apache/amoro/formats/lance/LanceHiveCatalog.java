@@ -30,6 +30,7 @@ import org.apache.amoro.FormatCatalog;
 import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.NoSuchTableException;
 import org.apache.amoro.properties.CatalogMetaProperties;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.arrow.memory.BufferAllocator;
@@ -280,16 +281,18 @@ public class LanceHiveCatalog implements FormatCatalog {
     if (!CatalogMetaProperties.CATALOG_TYPE_HIVE.equalsIgnoreCase(metastoreType)) {
       throw new IllegalArgumentException("Unsupported metastore type: " + metastoreType);
     }
+    Map<String, String> lanceCatalogProperties = Maps.newHashMap(properties);
     BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
     Hive3Namespace namespace = new Hive3Namespace();
     namespace.setHadoopConf(metaStore.getConfiguration());
-    if (!properties.containsKey(Hive3NamespaceConfig.ROOT)) {
-      String warehouse = properties.get(CatalogMetaProperties.KEY_WAREHOUSE);
-      properties.put(Hive3NamespaceConfig.ROOT, LanceProperties.normalizeRootUrl(warehouse));
+    String warehouse = lanceCatalogProperties.get(CatalogMetaProperties.KEY_WAREHOUSE);
+    if (warehouse != null && !warehouse.isEmpty()) {
+      lanceCatalogProperties.putIfAbsent(
+          Hive3NamespaceConfig.ROOT, LanceProperties.normalizeRootUrl(warehouse));
     }
-    namespace.initialize(properties, allocator);
+    namespace.initialize(lanceCatalogProperties, allocator);
     return new LanceHiveCatalog(
-        catalogName, namespace, properties, allocator, metaStore.getConfiguration());
+        catalogName, namespace, lanceCatalogProperties, allocator, metaStore.getConfiguration());
   }
 
   @Override
