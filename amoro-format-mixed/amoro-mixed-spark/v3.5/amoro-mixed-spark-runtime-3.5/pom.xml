@@ -487,7 +487,6 @@
                                             <include>org.apache.amoro:amoro-format-mixed-spark-3.5</include>
                                             <include>org.apache.amoro:amoro-common</include>
                                             <include>org.apache.amoro:amoro-format-iceberg</include>
-                                            <include>org.apache.amoro:amoro-format-lance</include>
                                             <include>org.apache.amoro:amoro-format-hive</include>
                                             <include>org.apache.kyuubi:kyuubi-spark-connector-hive_2.12</include>
                                             <include>org.apache.amoro:amoro-mixed-hive</include>
