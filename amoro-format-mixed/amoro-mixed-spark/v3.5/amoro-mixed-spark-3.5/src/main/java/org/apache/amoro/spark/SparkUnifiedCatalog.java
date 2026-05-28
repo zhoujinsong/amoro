@@ -22,16 +22,27 @@ import org.apache.amoro.TableFormat;
 import org.apache.spark.sql.catalyst.analysis.NoSuchFunctionException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
 import org.apache.spark.sql.connector.catalog.FunctionCatalog;
 import org.apache.spark.sql.connector.catalog.Identifier;
+import org.apache.spark.sql.connector.catalog.StagedTable;
+import org.apache.spark.sql.connector.catalog.StagingTableCatalog;
 import org.apache.spark.sql.connector.catalog.SupportsNamespaces;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.functions.UnboundFunction;
+import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.connector.iceberg.catalog.ProcedureCatalog;
+import org.apache.spark.sql.types.StructType;
+
+import java.util.Map;
 
 public class SparkUnifiedCatalog extends SparkUnifiedCatalogBase
-    implements TableCatalog, SupportsNamespaces, ProcedureCatalog, FunctionCatalog {
+    implements TableCatalog,
+        SupportsNamespaces,
+        ProcedureCatalog,
+        FunctionCatalog,
+        StagingTableCatalog {
 
   /**
    * List the functions in a namespace from the catalog.
@@ -106,5 +117,75 @@ public class SparkUnifiedCatalog extends SparkUnifiedCatalogBase
       throw new UnsupportedOperationException("Only support iceberg format now!");
     }
     return tableCatalog.loadTable(ident, timestamp);
+  }
+
+  @Override
+  public StagedTable stageCreate(
+      Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
+      throws TableAlreadyExistsException, NoSuchNamespaceException {
+    TableFormat format = resolveTableFormat(properties);
+    if (format != TableFormat.ICEBERG) {
+      throw new UnsupportedOperationException(
+          "Staging is only supported for Iceberg tables, but got format: " + format);
+    }
+    TableCatalog icebergCatalog = tableCatalog(TableFormat.ICEBERG);
+    if (icebergCatalog instanceof StagingTableCatalog) {
+      return ((StagingTableCatalog) icebergCatalog)
+          .stageCreate(ident, schema, partitions, properties);
+    }
+    throw new UnsupportedOperationException(
+        "Underlying Iceberg catalog does not support StagingTableCatalog");
+  }
+
+  @Override
+  public StagedTable stageReplace(
+      Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
+      throws NoSuchNamespaceException, NoSuchTableException {
+    TableFormat format = resolveTableFormat(properties);
+    if (format != TableFormat.ICEBERG) {
+      throw new UnsupportedOperationException(
+          "Staging is only supported for Iceberg tables, but got format: " + format);
+    }
+    TableCatalog icebergCatalog = tableCatalog(TableFormat.ICEBERG);
+    if (icebergCatalog instanceof StagingTableCatalog) {
+      return ((StagingTableCatalog) icebergCatalog)
+          .stageReplace(ident, schema, partitions, properties);
+    }
+    throw new UnsupportedOperationException(
+        "Underlying Iceberg catalog does not support StagingTableCatalog");
+  }
+
+  @Override
+  public StagedTable stageCreateOrReplace(
+      Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
+      throws NoSuchNamespaceException {
+    TableFormat format = resolveTableFormat(properties);
+    if (format != TableFormat.ICEBERG) {
+      throw new UnsupportedOperationException(
+          "Staging is only supported for Iceberg tables, but got format: " + format);
+    }
+    TableCatalog icebergCatalog = tableCatalog(TableFormat.ICEBERG);
+    if (icebergCatalog instanceof StagingTableCatalog) {
+      return ((StagingTableCatalog) icebergCatalog)
+          .stageCreateOrReplace(ident, schema, partitions, properties);
+    }
+    throw new UnsupportedOperationException(
+        "Underlying Iceberg catalog does not support StagingTableCatalog");
+  }
+
+  /**
+   * Resolve table format from properties, using the same logic as {@link
+   * SparkUnifiedCatalogBase#createTable}.
+   */
+  private TableFormat resolveTableFormat(Map<String, String> properties) {
+    String storeAs = properties.get(SPARK_HIVE_STORED_AS);
+    String provider =
+        properties.getOrDefault(TableCatalog.PROP_PROVIDER, TableFormat.ICEBERG.name());
+    String fileFormat = storeAs != null ? storeAs : provider;
+    TableFormat format = TableFormat.valueOf(fileFormat.toUpperCase());
+    if (format == null && TableFormat.isHiveFileFormats(fileFormat.toUpperCase())) {
+      format = TableFormat.HIVE_V2;
+    }
+    return format;
   }
 }
