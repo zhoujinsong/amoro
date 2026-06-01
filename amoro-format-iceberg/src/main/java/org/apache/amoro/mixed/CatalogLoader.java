@@ -84,6 +84,7 @@ public class CatalogLoader {
       case CatalogMetaProperties.CATALOG_TYPE_HADOOP:
       case CatalogMetaProperties.CATALOG_TYPE_GLUE:
       case CatalogMetaProperties.CATALOG_TYPE_CUSTOM:
+      case CatalogMetaProperties.CATALOG_TYPE_REST:
         catalogImpl = MIXED_ICEBERG_CATALOG_IMP;
         break;
       case CatalogMetaProperties.CATALOG_TYPE_HIVE:
