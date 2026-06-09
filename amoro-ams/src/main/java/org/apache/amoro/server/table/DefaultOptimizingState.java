@@ -406,15 +406,23 @@ public class DefaultOptimizingState extends StatedPersistentBase implements Proc
   }
 
   /**
-   * Lance 表的快照刷新逻辑，使用 version id 作为 snapshot id。
+   * Snapshot refresh logic for Lance tables, using the version id as the snapshot id.
    *
-   * @param amoroTable Lance 表
-   * @return 是否有快照变更
+   * @param amoroTable Lance table
+   * @return whether there is a snapshot change
    */
   private boolean refreshLanceSnapshots(AmoroTable<?> amoroTable) {
     try {
       Object dataset = amoroTable.originalTable();
-      // 通过反射调用 Lance Dataset 的 getVersion().getId() 获取版本号
+      // Empty Lance table (registered in HMS but dataset not yet created):
+      // skip snapshot refresh to avoid reflective NPE
+      if (dataset == null) {
+        LOG.debug(
+            "Skip refreshing snapshots for empty Lance table {} (originalTable is null)",
+            tableIdentifier);
+        return false;
+      }
+      // Reflectively invoke Lance Dataset's getVersion().getId() to obtain the version id
       Object version = dataset.getClass().getMethod("getVersion").invoke(dataset);
       long versionId = (long) version.getClass().getMethod("getId").invoke(version);
       long lastSnapshotId = currentSnapshotId;

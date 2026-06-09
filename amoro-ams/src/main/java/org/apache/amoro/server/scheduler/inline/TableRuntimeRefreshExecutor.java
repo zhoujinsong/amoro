@@ -121,7 +121,8 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
       DefaultOptimizingState optimizingState = defaultTableRuntime.getOptimizingState();
       AmoroTable<?> table = loadTable(tableRuntime);
 
-      // Lance 表走独立的刷新逻辑，不参与优化评估
+      // Lance tables go through a separate refresh path and do not participate in optimizing
+      // evaluation
       if (TableFormat.LANCE.equals(table.format())) {
         executeLanceRefresh(defaultTableRuntime, optimizingState, table);
         return;
@@ -145,15 +146,30 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
     }
   }
 
-  /** Lance 表的刷新逻辑：刷新快照 + 通过反射获取 ManifestSummary 构建 tableSummary。 */
+  /**
+   * Refresh logic for Lance tables: refresh snapshots + build tableSummary by reading the
+   * ManifestSummary via reflection.
+   */
   private void executeLanceRefresh(
       DefaultTableRuntime tableRuntime,
       DefaultOptimizingState optimizingState,
       AmoroTable<?> table) {
     try {
       optimizingState.refresh(table);
-      // 通过反射获取 Lance Dataset 的统计信息，避免直接依赖 lance 模块
+      // Read Lance Dataset statistics via reflection to avoid a direct dependency on the lance
+      // module
       Object dataset = table.originalTable();
+      // Empty Lance table (registered in HMS but dataset not yet created):
+      // skip reflection and write a zero-valued summary
+      if (dataset == null) {
+        AbstractOptimizingEvaluator.PendingInput emptySummary =
+            AbstractOptimizingEvaluator.PendingInput.ofLance(0, 0L, 0L, 0, 0L, 0L);
+        optimizingState.setTableSummary(emptySummary);
+        logger.info(
+            "Refreshed Lance table {} summary with empty placeholder (originalTable is null)",
+            tableRuntime.getTableIdentifier());
+        return;
+      }
       Object version = dataset.getClass().getMethod("getVersion").invoke(dataset);
       Object summary = version.getClass().getMethod("getManifestSummary").invoke(version);
       long totalFilesSize =

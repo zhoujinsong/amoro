@@ -68,19 +68,19 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   private static final String OPERATION_TYPE_APPEND = "append";
   private static final String STORAGE_TYPE_TCLAKE = "TCLAKE";
 
-  // Fragment 分区名前缀
+  // Fragment partition name prefix
   private static final String FRAGMENT_PREFIX = "fragment-";
-  // 文件类型常量
+  // File type constants
   private static final String FILE_TYPE_DATA = "DATA_FILE";
   private static final String FILE_TYPE_DELETION_PREFIX = "DELETION_FILE_";
-  // 删除文件路径格式
+  // Deletion file path format
   private static final String DELETION_FILE_PATH_FORMAT = "_deletions/%d-%d-%d.arrow";
-  // 优化类型常量
+  // Optimizing type constants
   private static final String OPTIMIZING_TYPE_COMPACTION_KEY = "COMPACTION";
   private static final String OPTIMIZING_TYPE_COMPACTION_VALUE = "compaction";
-  // 分支名常量
+  // Branch name constants
   private static final String BRANCH_MAIN = "main";
-  // baseMetric key 常量
+  // baseMetric key constants
   private static final String METRIC_VERSION = "version";
   private static final String METRIC_ROW_COUNT = "rowCount";
   private static final String METRIC_TOTAL_SIZE = "totalSize";
@@ -89,7 +89,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   private static final String METRIC_DELETION_FILE_COUNT = "deletionFileCount";
   private static final String METRIC_FRAGMENT_COUNT = "fragmentCount";
   private static final String METRIC_AVERAGE_FILE_SIZE = "averageFileSize";
-  // versionSummary key 常量
+  // versionSummary key constants
   private static final String SUMMARY_VERSION = "version";
   private static final String SUMMARY_TOTAL_ROWS = "totalRows";
   private static final String SUMMARY_TOTAL_DATA_FILES = "totalDataFiles";
@@ -118,13 +118,17 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
   @Override
   public ServerTableMeta getTableDetail(AmoroTable<?> amoroTable) {
+    // Empty table (registered in HMS but dataset not yet created): use placeholder to avoid NPE
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      return buildEmptyServerTableMeta(amoroTable);
+    }
     Dataset dataset = getDataset(amoroTable);
 
     ServerTableMeta serverTableMeta = new ServerTableMeta();
     serverTableMeta.setTableIdentifier(amoroTable.id());
     serverTableMeta.setTableType(amoroTable.format().name());
 
-    // 获取 Schema 信息
+    // Build Schema info
     Schema schema = dataset.getSchema();
     List<AMSColumnInfo> columns = new ArrayList<>();
     for (Field field : schema.getFields()) {
@@ -137,13 +141,13 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
     }
     serverTableMeta.setSchema(columns);
 
-    // Lance 表没有传统意义上的主键
+    // Lance tables have no primary key
     serverTableMeta.setPkList(Collections.emptyList());
 
-    // Lance 表没有分区
+    // Lance tables have no partitions
     serverTableMeta.setPartitionColumnList(Collections.emptyList());
 
-    // 构建 table properties，过滤掉敏感的 COSN 存储配置
+    // Build table properties; filter out sensitive COSN storage configurations
     Map<String, String> properties = new HashMap<>(amoroTable.properties());
     LanceProperties.removeSensitiveStorageConfigs(properties);
     properties.put(TABLE_FORMAT, TableFormat.LANCE.name());
@@ -153,18 +157,19 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
     ManifestSummary summary = currentVersion.getManifestSummary();
 
     long totalRows = summary.getTotalRows();
-    // totalFilesSize 实际是数据文件总大小（Lance 底层拿不到删除文件大小）
+    // totalFilesSize is actually the total size of data files (Lance does not expose deletion
+    // file size at the underlying layer)
     long totalFilesSize = summary.getTotalFilesSize();
     long totalDataFiles = summary.getTotalDataFiles();
     long totalDeletionFiles = summary.getTotalDeletionFiles();
     long totalFragments = summary.getTotalFragments();
 
-    // 总文件数 = 数据文件数 + 删除文件数
+    // Total file count = data files + deletion files
     long totalFileCount = totalDataFiles + totalDeletionFiles;
-    // 平均文件大小 = 数据文件大小 / 数据文件个数
+    // Average file size = data file total size / number of data files
     long averageFileSize = totalDataFiles > 0 ? totalFilesSize / totalDataFiles : 0;
 
-    // 创建表摘要
+    // Build table summary
     TableSummary tableSummary =
         new TableSummary(
             (int) totalFileCount,
@@ -193,6 +198,11 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   public List<AmoroSnapshotsOfTable> getSnapshots(
       AmoroTable<?> amoroTable, String ref, OperationType operationType) {
     long start = System.currentTimeMillis();
+    // Empty table has no versions; return an empty list directly
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      LOG.info("getSnapshots skipped: empty Lance table {}", amoroTable.id());
+      return Collections.emptyList();
+    }
     Dataset dataset = getDataset(amoroTable);
     List<AmoroSnapshotsOfTable> snapshots = new ArrayList<>();
 
@@ -211,11 +221,11 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       versionSummary.put(
           SUMMARY_TOTAL_DELETION_FILE_ROWS, String.valueOf(summary.getTotalDeletionFileRows()));
 
-      // 将 ZonedDateTime 转换为毫秒时间戳
+      // Convert ZonedDateTime to epoch millis
       long commitTime =
           version.getDataTime() != null ? version.getDataTime().toInstant().toEpochMilli() : 0L;
 
-      // 总文件数 = 数据文件数 + 删除文件数
+      // Total file count = data files + deletion files
       long totalFileCount = summary.getTotalDataFiles() + summary.getTotalDeletionFiles();
 
       AmoroSnapshotsOfTable snapshot =
@@ -254,11 +264,15 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   @Override
   public List<PartitionFileBaseInfo> getSnapshotDetail(
       AmoroTable<?> amoroTable, String snapshotId, String ref) {
+    // Empty table has no snapshot details
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      return Collections.emptyList();
+    }
     Dataset dataset = getDataset(amoroTable);
 
     try {
       long versionId = Long.parseLong(snapshotId);
-      // 切换到指定版本获取 fragment 文件信息
+      // Switch to the specified version to obtain fragment file info
       try (Dataset versionDataset = dataset.checkoutVersion(versionId)) {
         Version version = versionDataset.getVersion();
         long commitTime =
@@ -267,7 +281,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
         return collectFragmentFiles(versionDataset.getFragments(), snapshotId, commitTime);
       }
     } catch (NumberFormatException e) {
-      // snapshotId 解析失败，返回空列表
+      // Failed to parse snapshotId; return an empty list
     }
 
     return new ArrayList<>();
@@ -275,12 +289,16 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
   @Override
   public List<DDLInfo> getTableOperations(AmoroTable<?> amoroTable) {
-    // Lance 暂不支持 DDL 历史
+    // Lance does not support DDL history
     return Collections.emptyList();
   }
 
   @Override
   public List<PartitionBaseInfo> getTablePartitions(AmoroTable<?> amoroTable) {
+    // Empty table has no fragments / partitions
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      return Collections.emptyList();
+    }
     Dataset dataset = getDataset(amoroTable);
 
     Version currentVersion = dataset.getVersion();
@@ -297,7 +315,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       int fileCount = 0;
       long fileSize = 0L;
 
-      // 统计 DataFile
+      // Count DataFiles
       if (metadata.getFiles() != null) {
         fileCount += metadata.getFiles().size();
         for (DataFile dataFile : metadata.getFiles()) {
@@ -307,7 +325,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
         }
       }
 
-      // 统计 DeletionFile
+      // Count DeletionFile
       if (metadata.getDeletionFile() != null) {
         fileCount += 1;
       }
@@ -320,6 +338,10 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   @Override
   public List<PartitionFileBaseInfo> getTableFiles(
       AmoroTable<?> amoroTable, String partition, Integer specId) {
+    // Empty table has no data files
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      return Collections.emptyList();
+    }
     Dataset dataset = getDataset(amoroTable);
 
     Version currentVersion = dataset.getVersion();
@@ -331,7 +353,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
     List<Fragment> fragments = dataset.getFragments();
 
-    // 根据 partition 参数（格式为 "fragment-{id}"）过滤指定的 Fragment
+    // Filter the specified Fragment by the partition argument (format "fragment-{id}")
     if (partition != null && !partition.isEmpty() && !"null".equals(partition)) {
       fragments =
           fragments.stream()
@@ -351,14 +373,14 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       int offset,
       String beginTime,
       String endTime) {
-    // Lance 暂不支持
+    // Not yet supported for Lance
     return Pair.of(Collections.emptyList(), 0);
   }
 
   @Override
   public OptimizingProcessInfo getSingleOptimizingProcessInfo(
       AmoroTable<?> amoroTable, String processId) {
-    // Lance 暂不支持
+    // Not yet supported for Lance
     return new OptimizingProcessInfo();
   }
 
@@ -372,12 +394,16 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   @Override
   public List<OptimizingTaskInfo> getOptimizingTaskInfos(
       AmoroTable<?> amoroTable, String processId) {
-    // Lance 优化任务信息暂不支持
+    // Optimizing task info is not yet supported for Lance
     return Collections.emptyList();
   }
 
   @Override
   public List<TagOrBranchInfo> getTableTags(AmoroTable<?> amoroTable) {
+    // Empty table has no tags
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      return Collections.emptyList();
+    }
     Dataset dataset = getDataset(amoroTable);
     List<TagOrBranchInfo> tagInfos = new ArrayList<>();
 
@@ -387,14 +413,14 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
         tagInfos.add(
             new TagOrBranchInfo(
                 tag.getName(),
-                tag.getVersion(), // 对应 snapshotId
-                -1, // minSnapshotsToKeep，Lance 不支持
+                tag.getVersion(), // corresponds to snapshotId
+                -1, // minSnapshotsToKeep, not supported by Lance
                 0L, // maxSnapshotAgeMs
                 0L, // maxRefAgeMs
                 TagOrBranchInfo.TAG));
       }
     } catch (Exception e) {
-      // 如果获取 tag 失败，返回空列表
+      // If fetching tags fails, return an empty list
     }
 
     return tagInfos;
@@ -402,16 +428,22 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
   @Override
   public List<TagOrBranchInfo> getTableBranches(AmoroTable<?> amoroTable) {
+    // Empty table only returns the default main branch
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      List<TagOrBranchInfo> mainOnly = new ArrayList<>();
+      mainOnly.add(TagOrBranchInfo.MAIN_BRANCH);
+      return mainOnly;
+    }
     Dataset dataset = getDataset(amoroTable);
     List<TagOrBranchInfo> branchInfos = new ArrayList<>();
 
-    // 始终包含 main 分支
+    // Always include the main branch
     branchInfos.add(TagOrBranchInfo.MAIN_BRANCH);
 
     try {
       List<Branch> branches = dataset.branches().list();
       for (Branch branch : branches) {
-        // 跳过 main 分支，因为已经添加
+        // Skip the main branch since it has already been added
         if (BRANCH_MAIN.equals(branch.getName())) {
           continue;
         }
@@ -425,7 +457,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
                 TagOrBranchInfo.BRANCH));
       }
     } catch (Exception e) {
-      // 如果获取 branch 失败，仅返回 main 分支
+      // If fetching branches fails, only the main branch is returned
     }
 
     return branchInfos;
@@ -433,16 +465,16 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
   @Override
   public List<ConsumerInfo> getTableConsumerInfos(AmoroTable<?> amoroTable) {
-    // Lance 暂不支持 Consumer
+    // Lance does not yet support consumers
     return Collections.emptyList();
   }
 
   /**
-   * 从 Fragment 列表中收集所有文件信息（DataFile + DeletionFile）。
+   * Collect all file information (DataFile + DeletionFile) from a list of fragments.
    *
-   * @param fragments Fragment 列表
-   * @param versionId 版本标识
-   * @param commitTime 提交时间戳（毫秒）
+   * @param fragments fragment list
+   * @param versionId version identifier
+   * @param commitTime commit timestamp in millis
    */
   private List<PartitionFileBaseInfo> collectFragmentFiles(
       List<Fragment> fragments, String versionId, long commitTime) {
@@ -451,7 +483,7 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       FragmentMetadata metadata = fragment.metadata();
       String partitionName = buildFragmentPartitionName(metadata.getId());
 
-      // 遍历 Fragment 下的多个 DataFile
+      // Iterate the multiple DataFiles under the fragment
       if (metadata.getFiles() != null) {
         for (DataFile dataFile : metadata.getFiles()) {
           long fileSize = dataFile.getFileSizeBytes() != null ? dataFile.getFileSizeBytes() : 0L;
@@ -467,8 +499,8 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
         }
       }
 
-      // 处理 Fragment 下的 DeletionFile（每个 Fragment 最多一个）
-      // Lance deletion 文件命名规则: _deletions/{fragment_id}-{readVersion}-{id}.arrow
+      // Handle the DeletionFile under the fragment (at most one per fragment)
+      // Lance deletion file naming rule: _deletions/{fragment_id}-{readVersion}-{id}.arrow
       DeletionFile deletionFile = metadata.getDeletionFile();
       if (deletionFile != null) {
         String deletionFileName = buildDeletionFilePath(metadata.getId(), deletionFile);
@@ -487,21 +519,21 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   }
 
   /**
-   * 构建 Fragment 分区名称。
+   * Build the partition name of a fragment.
    *
-   * @param fragmentId Fragment ID
-   * @return 格式为 "fragment-{id}" 的分区名
+   * @param fragmentId fragment id
+   * @return partition name in the format "fragment-{id}"
    */
   private static String buildFragmentPartitionName(long fragmentId) {
     return FRAGMENT_PREFIX + fragmentId;
   }
 
   /**
-   * 构建删除文件路径。
+   * Build the deletion file path.
    *
-   * @param fragmentId Fragment ID
-   * @param deletionFile 删除文件对象
-   * @return 格式为 "_deletions/{fragment_id}-{readVersion}-{id}.arrow" 的路径
+   * @param fragmentId fragment id
+   * @param deletionFile deletion file object
+   * @return path in the format "_deletions/{fragment_id}-{readVersion}-{id}.arrow"
    */
   private static String buildDeletionFilePath(long fragmentId, DeletionFile deletionFile) {
     return String.format(
@@ -510,5 +542,40 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
   private Dataset getDataset(AmoroTable<?> amoroTable) {
     return (Dataset) amoroTable.originalTable();
+  }
+
+  /**
+   * Build a placeholder {@link ServerTableMeta} for an empty Lance table (registered in HMS but the
+   * dataset has not been created yet), so that the table-detail page on the frontend can be opened
+   * normally and only shows "no data".
+   */
+  private ServerTableMeta buildEmptyServerTableMeta(AmoroTable<?> amoroTable) {
+    ServerTableMeta serverTableMeta = new ServerTableMeta();
+    serverTableMeta.setTableIdentifier(amoroTable.id());
+    serverTableMeta.setTableType(amoroTable.format().name());
+    serverTableMeta.setSchema(Collections.emptyList());
+    serverTableMeta.setPkList(Collections.emptyList());
+    serverTableMeta.setPartitionColumnList(Collections.emptyList());
+
+    Map<String, String> properties = new HashMap<>(amoroTable.properties());
+    LanceProperties.removeSensitiveStorageConfigs(properties);
+    properties.put(TABLE_FORMAT, TableFormat.LANCE.name());
+    serverTableMeta.setProperties(properties);
+
+    serverTableMeta.setTableSummary(new TableSummary(0, "0", "0", 0L, TableFormat.LANCE.name()));
+
+    Map<String, Object> baseMetric = new HashMap<>();
+    baseMetric.put(METRIC_VERSION, 0L);
+    baseMetric.put(METRIC_ROW_COUNT, 0L);
+    baseMetric.put(METRIC_TOTAL_SIZE, 0L);
+    baseMetric.put(METRIC_FILE_COUNT, 0L);
+    baseMetric.put(METRIC_DATA_FILE_COUNT, 0L);
+    baseMetric.put(METRIC_DELETION_FILE_COUNT, 0L);
+    baseMetric.put(METRIC_FRAGMENT_COUNT, 0L);
+    baseMetric.put(METRIC_AVERAGE_FILE_SIZE, 0L);
+    serverTableMeta.setBaseMetrics(baseMetric);
+
+    LOG.info("getTableDetail returns empty placeholder for empty Lance table {}", amoroTable.id());
+    return serverTableMeta;
   }
 }

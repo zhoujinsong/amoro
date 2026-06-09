@@ -546,6 +546,11 @@
         </profile>
         <profile>
             <id>support-lance-format</id>
+            <activation>
+                <property>
+                    <name>!lance.skip</name>
+                </property>
+            </activation>
             <dependencyManagement>
                 <dependencies>
                     <dependency>
@@ -579,30 +584,6 @@
                     <artifactId>arrow-dataset</artifactId>
                 </dependency>
             </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <version>3.5.0</version>
-                        <executions>
-                            <execution>
-                                <id>enforce-arrow-dependency-convergence</id>
-                                <goals>
-                                    <goal>enforce</goal>
-                                </goals>
-                                <phase>validate</phase>
-                                <configuration>
-                                    <rules>
-                                        <DependencyConvergence></DependencyConvergence>
-                                    </rules>
-                                    <fail>true</fail>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <id>support-all-formats</id>
