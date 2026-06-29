@@ -136,7 +136,7 @@ const storeSupportFormat: { [prop: string]: string[] } = {
   hive: [tableFormatMap.MIXED_HIVE, tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG, tableFormatMap.PAIMON, tableFormatMap.HUDI, tableFormatMap.LANCE],
   hadoop: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG, tableFormatMap.PAIMON, tableFormatMap.LANCE],
   glue: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG],
-  custom: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG],
+  custom: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG, tableFormatMap.LANCE],
 }
 
 const storageConfigFileNameMap = {

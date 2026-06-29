@@ -38,6 +38,7 @@ public class CatalogMetaProperties {
   public static final String COS_STORAGE_CONFIGS_SECRET_ID = "cos_secret_id";
   public static final String COS_STORAGE_CONFIGS_SECRET_KEY = "cos_secret_key";
   public static final String COS_STORAGE_CONFIGS_SECURITY_TOKEN = "cos_security_token";
+  public static final String COS_STORAGE_CONFIGS_EXPIRES_AT_MILLIS = "expires_at_millis";
 
   public static final String AUTH_CONFIGS_KEY_TYPE = "auth.type";
   public static final String AUTH_CONFIGS_KEY_PRINCIPAL = "auth.kerberos.principal";

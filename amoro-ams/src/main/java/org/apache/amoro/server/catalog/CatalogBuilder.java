@@ -48,7 +48,8 @@ public class CatalogBuilder {
                   TableFormat.HUDI,
                   TableFormat.LANCE),
           CATALOG_TYPE_GLUE, Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG),
-          CATALOG_TYPE_CUSTOM, Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG),
+          CATALOG_TYPE_CUSTOM,
+              Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG, TableFormat.LANCE),
           CATALOG_TYPE_HIVE,
               Sets.newHashSet(
                   TableFormat.ICEBERG,
