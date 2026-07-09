@@ -68,6 +68,8 @@ public class CatalogUtil {
         case CatalogMetaProperties.CATALOG_TYPE_HADOOP:
         case CatalogMetaProperties.CATALOG_TYPE_GLUE:
           return Sets.newHashSet(TableFormat.ICEBERG);
+        case CatalogMetaProperties.CATALOG_TYPE_GRAVITINO:
+          return Sets.newHashSet(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG, TableFormat.LANCE);
         case CatalogMetaProperties.CATALOG_TYPE_HIVE:
           return Sets.newHashSet(TableFormat.MIXED_HIVE);
         default:

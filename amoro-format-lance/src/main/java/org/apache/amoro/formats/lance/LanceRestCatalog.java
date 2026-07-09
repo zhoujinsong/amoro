@@ -24,13 +24,14 @@ import org.apache.amoro.DatabaseNotEmptyException;
 import org.apache.amoro.FormatCatalog;
 import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.NoSuchTableException;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
-import org.apache.arrow.memory.BufferAllocator;
 import org.apache.commons.lang3.StringUtils;
 import org.lance.Dataset;
 import org.lance.ReadOptions;
 import org.lance.namespace.LanceNamespace;
 import org.lance.namespace.errors.NamespaceNotFoundException;
+import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.model.CreateNamespaceRequest;
 import org.lance.namespace.model.DescribeNamespaceRequest;
 import org.lance.namespace.model.DescribeNamespaceResponse;
@@ -42,6 +43,7 @@ import org.lance.namespace.model.ListNamespacesRequest;
 import org.lance.namespace.model.ListNamespacesResponse;
 import org.lance.namespace.model.ListTablesRequest;
 import org.lance.namespace.model.ListTablesResponse;
+import org.lance.namespace.model.TableExistsRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,7 +84,6 @@ public class LanceRestCatalog implements FormatCatalog {
 
   private final LanceNamespace restNamespace;
   private final Map<String, String> properties;
-  private final BufferAllocator allocator;
   private final String catalogName;
 
   /**
@@ -91,13 +92,10 @@ public class LanceRestCatalog implements FormatCatalog {
    * @param restNamespace the REST-based namespace client
    * @param properties catalog-level properties; must contain {@value #REST_CATALOG_NAME} (the
    *     remote REST catalog name) and may carry storage configurations
-   * @param allocator Arrow memory allocator for Lance dataset operations
    */
-  public LanceRestCatalog(
-      LanceNamespace restNamespace, Map<String, String> properties, BufferAllocator allocator) {
+  public LanceRestCatalog(LanceNamespace restNamespace, Map<String, String> properties) {
     this.restNamespace = restNamespace;
     this.properties = properties;
-    this.allocator = allocator;
     this.catalogName = properties == null ? null : properties.get(REST_CATALOG_NAME);
     if (StringUtils.isBlank(catalogName)) {
       throw new IllegalArgumentException(
@@ -153,8 +151,11 @@ public class LanceRestCatalog implements FormatCatalog {
   @Override
   public boolean tableExists(String database, String table) {
     try {
-      return listTables(database).contains(table);
-    } catch (NoSuchDatabaseException e) {
+      TableExistsRequest request = new TableExistsRequest();
+      request.setId(tableId(database, table));
+      restNamespace.tableExists(request);
+      return true;
+    } catch (TableNotFoundException e) {
       return false;
     }
   }
@@ -219,13 +220,14 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public AmoroTable<?> loadTable(String database, String table) {
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
-    }
-
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(tableId(database, table));
-    DescribeTableResponse response = restNamespace.describeTable(request);
+    DescribeTableResponse response;
+    try {
+      response = restNamespace.describeTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    }
 
     String location = response.getLocation();
     if (location == null || location.isEmpty()) {
@@ -240,7 +242,25 @@ public class LanceRestCatalog implements FormatCatalog {
     Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(properties);
     ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
     optionsBuilder.setStorageOptions(storageOptions);
-    Dataset dataset = Dataset.open(lanceLocation, optionsBuilder.build());
+    Dataset dataset;
+    try {
+      dataset = Dataset.open(lanceLocation, optionsBuilder.build());
+    } catch (Exception e) {
+      String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+      if (msg.contains("was not found")) {
+        LOG.info(
+            "Table {}.{} is registered but dataset not yet created at {}, returning empty table",
+            database,
+            table,
+            lanceLocation);
+        Map<String, String> emptyProperties = Maps.newHashMap();
+        emptyProperties.put(LanceProperties.TABLE_LOCATION, lanceLocation);
+        emptyProperties.put(LanceProperties.TABLE_EMPTY, "true");
+        TableIdentifier tableIdentifier = TableIdentifier.of(catalogName, database, table);
+        return new LanceTable(tableIdentifier, null, emptyProperties);
+      }
+      throw e;
+    }
 
     // 合并 dataset 的三个 metadata 源到统一的 tableProperties
     Map<String, String> mergedProperties = LanceProperties.mergeDatasetMetadata(dataset);
@@ -251,12 +271,13 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public boolean dropTable(String database, String table, boolean purge) {
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
-    }
     DropTableRequest request = new DropTableRequest();
     request.setId(tableId(database, table));
-    restNamespace.dropTable(request);
+    try {
+      restNamespace.dropTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    }
     return true;
   }
 }

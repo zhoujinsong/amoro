@@ -174,8 +174,8 @@ public class FlinkUnifiedCatalog extends AbstractCatalog {
 
   @Override
   public List<String> listTables(String databaseName) {
-    return unifiedCatalog.listTables(databaseName).stream()
-        .map(table -> table.getIdentifier().getTableName())
+    return unifiedCatalog.listTableIdentifiers(databaseName).stream()
+        .map(TableIdentifier::getTableName)
         .collect(java.util.stream.Collectors.toList());
   }
 

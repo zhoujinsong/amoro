@@ -77,7 +77,7 @@ public class LanceCatalogFactory implements FormatCatalogFactory {
     if (isRestMetastore(metastoreType)) {
       Map<String, String> lanceRestProperties = buildLanceRestProperties(properties);
       LanceNamespace namespace = LanceNamespace.connect("rest", lanceRestProperties, allocator);
-      return new LanceRestCatalog(namespace, lanceRestProperties, allocator);
+      return new LanceRestCatalog(namespace, lanceRestProperties);
     }
 
     Map<String, String> lanceCatalogProperties = Maps.newHashMap(properties);
@@ -161,14 +161,29 @@ public class LanceCatalogFactory implements FormatCatalogFactory {
         out.putIfAbsent(LanceRestCatalog.REST_CATALOG_NAME, warehouse);
       }
     }
-    // 4. uri: lance.uri wins; otherwise derive from the shared (iceberg) uri
+    // 4. uri: lance.uri wins; otherwise derive from the shared (iceberg) uri.
     if (StringUtils.isBlank(out.get(URI_KEY))) {
       String sharedUri = properties.get(URI_KEY);
       if (StringUtils.isNotBlank(sharedUri)) {
-        out.put(URI_KEY, deriveLanceUri(sharedUri));
+        out.put(URI_KEY, stripTrailingSlash(deriveLanceUri(sharedUri)));
       }
+    } else {
+      out.put(URI_KEY, stripTrailingSlash(out.get(URI_KEY)));
     }
     return out;
+  }
+
+  /**
+   * Removes trailing {@code /} characters so the Rust SDK's {@code uri + "/v1/..."} join is clean.
+   */
+  private static String stripTrailingSlash(String uri) {
+    if (uri == null) {
+      return null;
+    }
+    while (uri.endsWith("/")) {
+      uri = uri.substring(0, uri.length() - 1);
+    }
+    return uri;
   }
 
   /**

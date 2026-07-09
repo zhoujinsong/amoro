@@ -440,23 +440,25 @@ public class LanceHiveCatalog implements FormatCatalog {
       dataset = Dataset.open(lanceLocation, optionsBuilder.build());
 
     } catch (Exception e) {
-      // 表仅在 HMS 中注册但尚未创建实际数据，返回空 LanceTable
-      LOG.warn(
-          "Failed to open dataset for {}.{} at {}, returning empty table: {}",
-          database,
-          table,
-          lanceLocation,
-          e.getMessage());
-      Map<String, String> emptyProperties = new HashMap<>();
-      emptyProperties.put(LanceProperties.TABLE_LOCATION, lanceLocation);
-      emptyProperties.put(LanceProperties.TABLE_EMPTY, "true");
-      LOG.info(
-          "loadTable success (empty table): {}.{}, location={}, elapsed={}ms",
-          database,
-          table,
-          lanceLocation,
-          System.currentTimeMillis() - start);
-      return new LanceTable(tableIdentifier, null, emptyProperties);
+      String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+      if (msg.contains("was not found")) {
+        LOG.info(
+            "Table {}.{} is registered but dataset not yet created at {}, returning empty table",
+            database,
+            table,
+            lanceLocation);
+        Map<String, String> emptyProperties = new HashMap<>();
+        emptyProperties.put(LanceProperties.TABLE_LOCATION, lanceLocation);
+        emptyProperties.put(LanceProperties.TABLE_EMPTY, "true");
+        LOG.info(
+            "loadTable success (empty table): {}.{}, location={}, elapsed={}ms",
+            database,
+            table,
+            lanceLocation,
+            System.currentTimeMillis() - start);
+        return new LanceTable(tableIdentifier, null, emptyProperties);
+      }
+      throw e;
     }
 
     // 合并三个 metadata 源到统一的 tableProperties

@@ -137,6 +137,7 @@ const storeSupportFormat: { [prop: string]: string[] } = {
   hadoop: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG, tableFormatMap.PAIMON, tableFormatMap.LANCE],
   glue: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG],
   custom: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG, tableFormatMap.LANCE],
+  gravitino: [tableFormatMap.MIXED_ICEBERG, tableFormatMap.ICEBERG, tableFormatMap.LANCE],
 }
 
 const storageConfigFileNameMap = {
@@ -199,6 +200,7 @@ const defaultPropertiesMap = {
   custom: ['catalog-impl'],
   glue: ['warehouse', 'lock-impl', 'lock.table'],
   PAIMON: ['warehouse'],
+  gravitino: ['uri', 'warehouse', 'iceberg_rest_server_url', 'lance_rest_server_url', 'header.Authorization', 'header.X-VPC-ID'],
 }
 
 watch(() => route.query, (value) => {
@@ -408,7 +410,7 @@ const storageConfigTypeHadoopS3Oss = reactive<ILableAndValue[]>([{
 
 const storageConfigTypeOps = computed(() => {
   const type = formState.catalog.type
-  if (type === 'ams' || type === 'custom') {
+  if (type === 'ams' || type === 'custom' || type === 'gravitino') {
     return storageConfigTypeHadoopS3Oss
   }
   else if (type === 'glue') {

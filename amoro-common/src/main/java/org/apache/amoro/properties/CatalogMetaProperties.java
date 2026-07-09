@@ -65,6 +65,7 @@ public class CatalogMetaProperties {
   public static final String CATALOG_TYPE_GLUE = "glue";
   public static final String CATALOG_TYPE_REST = "rest";
   public static final String CATALOG_TYPE_CUSTOM = "custom";
+  public static final String CATALOG_TYPE_GRAVITINO = "gravitino";
 
   public static final String TABLE_FORMATS = "table-formats";
 

@@ -70,6 +70,17 @@
         </dependency>
 
         <dependency>
+            <groupId>org.apache.gravitino</groupId>
+            <artifactId>gravitino-client-java</artifactId>
+            <version>${gravitino.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.gravitino</groupId>
+            <artifactId>gravitino-api</artifactId>
+            <version>${gravitino.version}</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_2.12</artifactId>
             <version>${terminal.spark.version}</version>

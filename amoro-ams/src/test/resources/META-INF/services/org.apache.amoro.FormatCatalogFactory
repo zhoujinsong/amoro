@@ -1,0 +1,2 @@
+org.apache.amoro.server.catalog.gravitino.FakeIcebergCatalogFactory
+org.apache.amoro.server.catalog.gravitino.FakeLanceCatalogFactory

@@ -62,6 +62,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class DefaultTableService extends PersistentBase implements TableService {
@@ -273,8 +274,22 @@ public class DefaultTableService extends PersistentBase implements TableService 
                 tableIdentifiersFutures.add(
                     CompletableFuture.supplyAsync(
                             () ->
-                                externalCatalog.listTables(database).stream()
-                                    .map(TableIdentity::new)
+                                externalCatalog.listTableIdentifiers(database).stream()
+                                    // Do not resolve the format here: it is fetched lazily and only
+                                    // for the incremental tables that end up being synced (see
+                                    // syncTable), so bulk listing avoids one metadata round-trip
+                                    // per
+                                    // table on catalogs where listing-with-format is expensive
+                                    // (e.g. Gravitino issuing a loadTable per table).
+                                    .map(
+                                        identifier ->
+                                            new TableIdentity(
+                                                identifier.getDatabase(),
+                                                identifier.getTableName(),
+                                                () ->
+                                                    externalCatalog.loadTableFormat(
+                                                        identifier.getDatabase(),
+                                                        identifier.getTableName())))
                                     .collect(Collectors.toSet()),
                             tableExplorerExecutors)
                         .exceptionally(
@@ -504,24 +519,49 @@ public class DefaultTableService extends PersistentBase implements TableService 
     private final String database;
     private final String tableName;
 
-    private final TableFormat format;
+    /**
+     * Format is resolved lazily. Identity ({@link #equals}/{@link #hashCode}) is based only on
+     * database + table name, so the table-explorer diff does not need the format; it is fetched on
+     * demand (see {@link #getFormat()}) only for the incremental tables that are actually synced,
+     * which lets bulk listing skip one metadata round-trip per table on catalogs where
+     * listing-with-format is expensive (e.g. Gravitino).
+     */
+    private final Supplier<TableFormat> formatSupplier;
+
+    private volatile TableFormat format;
+    private volatile boolean formatResolved;
 
     protected TableIdentity(TableIDWithFormat idWithFormat) {
       this.database = idWithFormat.getIdentifier().getDatabase();
       this.tableName = idWithFormat.getIdentifier().getTableName();
       this.format = idWithFormat.getTableFormat();
+      this.formatResolved = true;
+      this.formatSupplier = null;
     }
 
     protected TableIdentity(ServerTableIdentifier serverTableIdentifier) {
       this.database = serverTableIdentifier.getDatabase();
       this.tableName = serverTableIdentifier.getTableName();
       this.format = serverTableIdentifier.getFormat();
+      this.formatResolved = true;
+      this.formatSupplier = null;
     }
 
     protected TableIdentity(String database, String tableName, TableFormat format) {
       this.database = database;
       this.tableName = tableName;
       this.format = format;
+      this.formatResolved = true;
+      this.formatSupplier = null;
+    }
+
+    /** Identifier whose format is resolved lazily via {@code formatSupplier} only when needed. */
+    protected TableIdentity(
+        String database, String tableName, Supplier<TableFormat> formatSupplier) {
+      this.database = database;
+      this.tableName = tableName;
+      this.formatSupplier = formatSupplier;
+      this.formatResolved = false;
     }
 
     public String getDatabase() {
@@ -533,6 +573,14 @@ public class DefaultTableService extends PersistentBase implements TableService 
     }
 
     public TableFormat getFormat() {
+      if (!formatResolved) {
+        synchronized (this) {
+          if (!formatResolved) {
+            this.format = formatSupplier.get();
+            this.formatResolved = true;
+          }
+        }
+      }
       return format;
     }
 

@@ -37,6 +37,7 @@ import static org.apache.amoro.properties.CatalogMetaProperties.AUTH_CONFIGS_VAL
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_AMS;
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_CUSTOM;
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_GLUE;
+import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_GRAVITINO;
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_HADOOP;
 import static org.apache.amoro.properties.CatalogMetaProperties.CATALOG_TYPE_HIVE;
 import static org.apache.amoro.properties.CatalogMetaProperties.FILE_CONTENT_BASE64_SUFFIX;
@@ -61,6 +62,7 @@ import org.apache.amoro.server.AmoroManagementConf;
 import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.catalog.InternalCatalog;
 import org.apache.amoro.server.catalog.ServerCatalog;
+import org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties;
 import org.apache.amoro.server.dashboard.PlatformFileManager;
 import org.apache.amoro.server.dashboard.model.CatalogRegisterInfo;
 import org.apache.amoro.server.dashboard.model.CatalogSettingInfo;
@@ -110,6 +112,11 @@ public class CatalogController {
         CATALOG_TYPE_GLUE, Lists.newArrayList(CatalogProperties.WAREHOUSE_LOCATION));
     CATALOG_REQUIRED_PROPERTIES.put(
         CATALOG_TYPE_CUSTOM, Lists.newArrayList(CatalogProperties.CATALOG_IMPL));
+    CATALOG_REQUIRED_PROPERTIES.put(
+        CATALOG_TYPE_GRAVITINO,
+        Lists.newArrayList(
+            GravitinoUnifiedCatalogProperties.GRAVITINO_URI,
+            GravitinoUnifiedCatalogProperties.WAREHOUSE));
   }
 
   static {
@@ -170,6 +177,19 @@ public class CatalogController {
             CATALOG_TYPE_CUSTOM, STORAGE_CONFIGS_VALUE_TYPE_HADOOP, MIXED_ICEBERG));
     VALIDATE_CATALOGS.add(
         CatalogDescriptor.of(CATALOG_TYPE_CUSTOM, STORAGE_CONFIGS_VALUE_TYPE_HADOOP, LANCE));
+    for (String gravitinoStorageType :
+        new String[] {
+          STORAGE_CONFIGS_VALUE_TYPE_HADOOP,
+          STORAGE_CONFIGS_VALUE_TYPE_S3,
+          STORAGE_CONFIGS_VALUE_TYPE_OSS
+        }) {
+      VALIDATE_CATALOGS.add(
+          CatalogDescriptor.of(CATALOG_TYPE_GRAVITINO, gravitinoStorageType, ICEBERG));
+      VALIDATE_CATALOGS.add(
+          CatalogDescriptor.of(CATALOG_TYPE_GRAVITINO, gravitinoStorageType, MIXED_ICEBERG));
+      VALIDATE_CATALOGS.add(
+          CatalogDescriptor.of(CATALOG_TYPE_GRAVITINO, gravitinoStorageType, LANCE));
+    }
   }
 
   private final PlatformFileManager platformFileInfoService;
@@ -226,6 +246,7 @@ public class CatalogController {
     catalogTypes.add(ImmutableMap.of(valueKey, CATALOG_TYPE_HADOOP, displayKey, "Filesystem"));
     catalogTypes.add(ImmutableMap.of(valueKey, CATALOG_TYPE_GLUE, displayKey, "Glue"));
     catalogTypes.add(ImmutableMap.of(valueKey, CATALOG_TYPE_CUSTOM, displayKey, "Custom"));
+    catalogTypes.add(ImmutableMap.of(valueKey, CATALOG_TYPE_GRAVITINO, displayKey, "Gravitino"));
     ctx.json(OkResponse.of(catalogTypes));
   }
 

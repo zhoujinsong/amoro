@@ -24,6 +24,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,12 +33,11 @@ import org.apache.amoro.AlreadyExistsException;
 import org.apache.amoro.DatabaseNotEmptyException;
 import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.NoSuchTableException;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
 import org.junit.Before;
 import org.junit.Test;
 import org.lance.namespace.LanceNamespace;
 import org.lance.namespace.errors.NamespaceNotFoundException;
+import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.model.CreateNamespaceRequest;
 import org.lance.namespace.model.DescribeNamespaceRequest;
 import org.lance.namespace.model.DescribeNamespaceResponse;
@@ -47,6 +47,7 @@ import org.lance.namespace.model.ListNamespacesRequest;
 import org.lance.namespace.model.ListNamespacesResponse;
 import org.lance.namespace.model.ListTablesRequest;
 import org.lance.namespace.model.ListTablesResponse;
+import org.lance.namespace.model.TableExistsRequest;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Arrays;
@@ -80,15 +81,13 @@ public class TestLanceRestCatalogMock {
   private LanceNamespace mockNamespace;
   private LanceRestCatalog catalog;
   private Map<String, String> properties;
-  private BufferAllocator allocator;
 
   @Before
   public void setUp() {
-    allocator = new RootAllocator(Long.MAX_VALUE);
     mockNamespace = mock(LanceNamespace.class);
     properties = new HashMap<>();
     properties.put(LanceRestCatalog.REST_CATALOG_NAME, TEST_CATALOG);
-    catalog = new LanceRestCatalog(mockNamespace, properties, allocator);
+    catalog = new LanceRestCatalog(mockNamespace, properties);
   }
 
   // ==================== constructor / catalog name Tests ====================
@@ -97,17 +96,14 @@ public class TestLanceRestCatalogMock {
   public void testMissingCatalogNameRejected() {
     // No 'catalog' property -> 3-level addressing impossible -> reject at construction.
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new LanceRestCatalog(mockNamespace, new HashMap<>(), allocator));
+        IllegalArgumentException.class, () -> new LanceRestCatalog(mockNamespace, new HashMap<>()));
   }
 
   @Test
   public void testBlankCatalogNameRejected() {
     Map<String, String> blank = new HashMap<>();
     blank.put(LanceRestCatalog.REST_CATALOG_NAME, "  ");
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> new LanceRestCatalog(mockNamespace, blank, allocator));
+    assertThrows(IllegalArgumentException.class, () -> new LanceRestCatalog(mockNamespace, blank));
   }
 
   // ==================== listDatabases Tests ====================
@@ -218,19 +214,20 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testTableExistsFalse() {
-    ListTablesResponse response = mock(ListTablesResponse.class);
-    when(response.getTables()).thenReturn(new HashSet<>(Arrays.asList("table1", "table2")));
-    when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(response);
+    doThrow(new TableNotFoundException("table not found"))
+        .when(mockNamespace)
+        .tableExists(any(TableExistsRequest.class));
 
     assertFalse(catalog.tableExists(TEST_DATABASE, "non_existent_table"));
   }
 
   @Test
   public void testTableExistsWhenDatabaseNotExists() {
-    when(mockNamespace.listTables(any(ListTablesRequest.class)))
-        .thenThrow(new NamespaceNotFoundException("not found"));
+    doThrow(new TableNotFoundException("table not found"))
+        .when(mockNamespace)
+        .tableExists(any(TableExistsRequest.class));
 
-    // tableExists should swallow the missing-database case and return false.
+    // tableExists should swallow the not-found case and return false.
     assertFalse(catalog.tableExists("non_existent_db", TEST_TABLE));
   }
 
@@ -356,10 +353,7 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testDropTable() {
-    ListTablesResponse response = mock(ListTablesResponse.class);
-    when(response.getTables()).thenReturn(new HashSet<>(Collections.singletonList(TEST_TABLE)));
-    when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(response);
-
+    // dropTable calls the namespace directly without a pre-existence check.
     boolean dropped = catalog.dropTable(TEST_DATABASE, TEST_TABLE, true);
 
     assertTrue(dropped);
@@ -372,9 +366,9 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testDropTableNotExists() {
-    ListTablesResponse response = mock(ListTablesResponse.class);
-    when(response.getTables()).thenReturn(new HashSet<>());
-    when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(response);
+    doThrow(new TableNotFoundException("table not found"))
+        .when(mockNamespace)
+        .dropTable(any(DropTableRequest.class));
 
     assertThrows(
         NoSuchTableException.class, () -> catalog.dropTable(TEST_DATABASE, TEST_TABLE, true));
