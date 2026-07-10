@@ -52,6 +52,9 @@ public class LanceProperties {
   public static final String CREATE_MODE_OVERWRITE = "overwrite";
   public static final String CREATE_MODE_CREATE = "create";
 
+  /** Default page size for lance REST listTables requests. */
+  public static final int DEFAULT_PAGE_SIZE = 1000;
+
   /**
    * Empty-table flag key. Value {@code "true"} indicates that the table is only registered in HMS
    * and the underlying data has not been created yet.

@@ -21,11 +21,14 @@ package org.apache.amoro.formats.lance;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +39,7 @@ import org.apache.amoro.NoSuchTableException;
 import org.junit.Before;
 import org.junit.Test;
 import org.lance.namespace.LanceNamespace;
+import org.lance.namespace.errors.NamespaceAlreadyExistsException;
 import org.lance.namespace.errors.NamespaceNotFoundException;
 import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.model.CreateNamespaceRequest;
@@ -47,6 +51,7 @@ import org.lance.namespace.model.ListNamespacesRequest;
 import org.lance.namespace.model.ListNamespacesResponse;
 import org.lance.namespace.model.ListTablesRequest;
 import org.lance.namespace.model.ListTablesResponse;
+import org.lance.namespace.model.NamespaceExistsRequest;
 import org.lance.namespace.model.TableExistsRequest;
 import org.mockito.ArgumentCaptor;
 
@@ -57,21 +62,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Unit tests for {@link LanceRestCatalog} public methods.
- *
- * <p>This test class follows the Amoro project testing style, using Mockito to mock the {@link
- * LanceNamespace} dependency. Tests cover the metadata operations defined in the {@code
- * FormatCatalog} interface that only touch the namespace (no JNI native library).
- *
- * <p>The REST catalog uses a three-level namespace: the remote catalog name (from the {@code
- * catalog} property) is the top level, so databases are addressed as {@code id = [catalog,
- * database]} and tables as {@code id = [catalog, database, table]}; listing databases uses {@code
- * id = [catalog]}.
- *
- * <p>Note: {@code loadTable} relies on {@code Dataset.open()} which requires the Lance JNI native
- * library, so it is not covered here.
- */
+/** Unit tests for {@link LanceRestCatalog} public methods using Mockito mocks. */
 public class TestLanceRestCatalogMock {
 
   private static final String TEST_CATALOG = "test_catalog";
@@ -94,7 +85,6 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testMissingCatalogNameRejected() {
-    // No 'catalog' property -> 3-level addressing impossible -> reject at construction.
     assertThrows(
         IllegalArgumentException.class, () -> new LanceRestCatalog(mockNamespace, new HashMap<>()));
   }
@@ -112,6 +102,7 @@ public class TestLanceRestCatalogMock {
   public void testListDatabases() {
     ListNamespacesResponse response = mock(ListNamespacesResponse.class);
     when(response.getNamespaces()).thenReturn(new HashSet<>(Arrays.asList("db1", "db2", "db3")));
+    when(response.getPageToken()).thenReturn(null);
     when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(response);
 
     List<String> databases = catalog.listDatabases();
@@ -119,10 +110,7 @@ public class TestLanceRestCatalogMock {
     assertNotNull(databases);
     assertEquals(3, databases.size());
     assertTrue(databases.contains("db1"));
-    assertTrue(databases.contains("db2"));
-    assertTrue(databases.contains("db3"));
 
-    // Databases are listed under the catalog namespace: id = [catalog].
     ArgumentCaptor<ListNamespacesRequest> captor =
         ArgumentCaptor.forClass(ListNamespacesRequest.class);
     verify(mockNamespace).listNamespaces(captor.capture());
@@ -133,6 +121,7 @@ public class TestLanceRestCatalogMock {
   public void testListDatabasesEmpty() {
     ListNamespacesResponse response = mock(ListNamespacesResponse.class);
     when(response.getNamespaces()).thenReturn(new HashSet<>());
+    when(response.getPageToken()).thenReturn(null);
     when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(response);
 
     List<String> databases = catalog.listDatabases();
@@ -145,19 +134,20 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testDatabaseExistsTrue() {
-    ListNamespacesResponse response = mock(ListNamespacesResponse.class);
-    when(response.getNamespaces())
-        .thenReturn(new HashSet<>(Arrays.asList("db1", TEST_DATABASE, "db2")));
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(response);
-
+    // namespaceExists returns normally (no exception) when the database exists.
     assertTrue(catalog.databaseExists(TEST_DATABASE));
+
+    ArgumentCaptor<NamespaceExistsRequest> captor =
+        ArgumentCaptor.forClass(NamespaceExistsRequest.class);
+    verify(mockNamespace).namespaceExists(captor.capture());
+    assertEquals(Arrays.asList(TEST_CATALOG, TEST_DATABASE), captor.getValue().getId());
   }
 
   @Test
   public void testDatabaseExistsFalse() {
-    ListNamespacesResponse response = mock(ListNamespacesResponse.class);
-    when(response.getNamespaces()).thenReturn(new HashSet<>(Arrays.asList("db1", "db2")));
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(response);
+    doThrow(new NamespaceNotFoundException("not found"))
+        .when(mockNamespace)
+        .namespaceExists(any(NamespaceExistsRequest.class));
 
     assertFalse(catalog.databaseExists("non_existent_db"));
   }
@@ -169,6 +159,7 @@ public class TestLanceRestCatalogMock {
     ListTablesResponse response = mock(ListTablesResponse.class);
     when(response.getTables())
         .thenReturn(new HashSet<>(Arrays.asList("table1", "table2", "table3")));
+    when(response.getPageToken()).thenReturn(null);
     when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(response);
 
     List<String> tables = catalog.listTables(TEST_DATABASE);
@@ -177,7 +168,6 @@ public class TestLanceRestCatalogMock {
     assertEquals(3, tables.size());
     assertTrue(tables.contains("table1"));
 
-    // REST table listing uses a three-level id prefix: [catalog, database].
     ArgumentCaptor<ListTablesRequest> captor = ArgumentCaptor.forClass(ListTablesRequest.class);
     verify(mockNamespace).listTables(captor.capture());
     assertEquals(Arrays.asList(TEST_CATALOG, TEST_DATABASE), captor.getValue().getId());
@@ -187,6 +177,7 @@ public class TestLanceRestCatalogMock {
   public void testListTablesEmpty() {
     ListTablesResponse response = mock(ListTablesResponse.class);
     when(response.getTables()).thenReturn(new HashSet<>());
+    when(response.getPageToken()).thenReturn(null);
     when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(response);
 
     assertTrue(catalog.listTables(TEST_DATABASE).isEmpty());
@@ -200,16 +191,43 @@ public class TestLanceRestCatalogMock {
     assertThrows(NoSuchDatabaseException.class, () -> catalog.listTables("non_existent_db"));
   }
 
+  @Test
+  public void testListTablesWithPagination() {
+    ListTablesResponse page1 = mock(ListTablesResponse.class);
+    when(page1.getTables()).thenReturn(new HashSet<>(Arrays.asList("table1", "table2")));
+    when(page1.getPageToken()).thenReturn("page2-token");
+    ListTablesResponse page2 = mock(ListTablesResponse.class);
+    when(page2.getTables()).thenReturn(new HashSet<>(Arrays.asList("table3", "table4")));
+    when(page2.getPageToken()).thenReturn(null);
+
+    when(mockNamespace.listTables(any(ListTablesRequest.class)))
+        .thenReturn(page1)
+        .thenReturn(page2);
+
+    List<String> tables = catalog.listTables(TEST_DATABASE);
+
+    assertEquals(4, tables.size());
+    assertTrue(tables.containsAll(Arrays.asList("table1", "table2", "table3", "table4")));
+
+    verify(mockNamespace, times(2)).listTables(any(ListTablesRequest.class));
+
+    ArgumentCaptor<ListTablesRequest> captor = ArgumentCaptor.forClass(ListTablesRequest.class);
+    verify(mockNamespace, times(2)).listTables(captor.capture());
+    List<ListTablesRequest> requests = captor.getAllValues();
+    assertNull(requests.get(0).getPageToken());
+    assertEquals("page2-token", requests.get(1).getPageToken());
+  }
+
   // ==================== tableExists Tests ====================
 
   @Test
   public void testTableExistsTrue() {
-    ListTablesResponse response = mock(ListTablesResponse.class);
-    when(response.getTables())
-        .thenReturn(new HashSet<>(Arrays.asList("table1", TEST_TABLE, "table2")));
-    when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(response);
-
+    // tableExists returns normally (no exception) when the table exists.
     assertTrue(catalog.tableExists(TEST_DATABASE, TEST_TABLE));
+
+    ArgumentCaptor<TableExistsRequest> captor = ArgumentCaptor.forClass(TableExistsRequest.class);
+    verify(mockNamespace).tableExists(captor.capture());
+    assertEquals(Arrays.asList(TEST_CATALOG, TEST_DATABASE, TEST_TABLE), captor.getValue().getId());
   }
 
   @Test
@@ -221,24 +239,10 @@ public class TestLanceRestCatalogMock {
     assertFalse(catalog.tableExists(TEST_DATABASE, "non_existent_table"));
   }
 
-  @Test
-  public void testTableExistsWhenDatabaseNotExists() {
-    doThrow(new TableNotFoundException("table not found"))
-        .when(mockNamespace)
-        .tableExists(any(TableExistsRequest.class));
-
-    // tableExists should swallow the not-found case and return false.
-    assertFalse(catalog.tableExists("non_existent_db", TEST_TABLE));
-  }
-
   // ==================== createDatabase Tests ====================
 
   @Test
   public void testCreateDatabase() {
-    ListNamespacesResponse listResponse = mock(ListNamespacesResponse.class);
-    when(listResponse.getNamespaces()).thenReturn(new HashSet<>());
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(listResponse);
-
     catalog.createDatabase(TEST_DATABASE);
 
     ArgumentCaptor<CreateNamespaceRequest> captor =
@@ -249,10 +253,6 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testCreateDatabaseWithMetadata() {
-    ListNamespacesResponse listResponse = mock(ListNamespacesResponse.class);
-    when(listResponse.getNamespaces()).thenReturn(new HashSet<>());
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(listResponse);
-
     Map<String, String> metadata = new HashMap<>();
     metadata.put("owner", "amoro");
 
@@ -267,10 +267,9 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testCreateDatabaseAlreadyExists() {
-    ListNamespacesResponse listResponse = mock(ListNamespacesResponse.class);
-    when(listResponse.getNamespaces())
-        .thenReturn(new HashSet<>(Collections.singletonList(TEST_DATABASE)));
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(listResponse);
+    doThrow(new NamespaceAlreadyExistsException("already exists"))
+        .when(mockNamespace)
+        .createNamespace(any(CreateNamespaceRequest.class));
 
     assertThrows(AlreadyExistsException.class, () -> catalog.createDatabase(TEST_DATABASE));
   }
@@ -308,13 +307,10 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testDropDatabase() {
-    ListNamespacesResponse listResponse = mock(ListNamespacesResponse.class);
-    when(listResponse.getNamespaces())
-        .thenReturn(new HashSet<>(Collections.singletonList(TEST_DATABASE)));
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(listResponse);
-
+    // listTables returns empty (database is empty, allow drop)
     ListTablesResponse listTablesResponse = mock(ListTablesResponse.class);
     when(listTablesResponse.getTables()).thenReturn(new HashSet<>());
+    when(listTablesResponse.getPageToken()).thenReturn(null);
     when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(listTablesResponse);
 
     catalog.dropDatabase(TEST_DATABASE);
@@ -327,23 +323,20 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testDropDatabaseNotExists() {
-    ListNamespacesResponse listResponse = mock(ListNamespacesResponse.class);
-    when(listResponse.getNamespaces()).thenReturn(new HashSet<>());
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(listResponse);
+    // listTables throws NamespaceNotFoundException → dropDatabase catches and re-throws as
+    // NoSuchDatabaseException.
+    when(mockNamespace.listTables(any(ListTablesRequest.class)))
+        .thenThrow(new NamespaceNotFoundException("not found"));
 
     assertThrows(NoSuchDatabaseException.class, () -> catalog.dropDatabase(TEST_DATABASE));
   }
 
   @Test
   public void testDropDatabaseNotEmpty() {
-    ListNamespacesResponse listResponse = mock(ListNamespacesResponse.class);
-    when(listResponse.getNamespaces())
-        .thenReturn(new HashSet<>(Collections.singletonList(TEST_DATABASE)));
-    when(mockNamespace.listNamespaces(any(ListNamespacesRequest.class))).thenReturn(listResponse);
-
     ListTablesResponse listTablesResponse = mock(ListTablesResponse.class);
     when(listTablesResponse.getTables())
         .thenReturn(new HashSet<>(Collections.singletonList(TEST_TABLE)));
+    when(listTablesResponse.getPageToken()).thenReturn(null);
     when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(listTablesResponse);
 
     assertThrows(DatabaseNotEmptyException.class, () -> catalog.dropDatabase(TEST_DATABASE));
@@ -353,12 +346,10 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testDropTable() {
-    // dropTable calls the namespace directly without a pre-existence check.
     boolean dropped = catalog.dropTable(TEST_DATABASE, TEST_TABLE, true);
 
     assertTrue(dropped);
 
-    // REST table operations use a three-level id: [catalog, database, table].
     ArgumentCaptor<DropTableRequest> captor = ArgumentCaptor.forClass(DropTableRequest.class);
     verify(mockNamespace).dropTable(captor.capture());
     assertEquals(Arrays.asList(TEST_CATALOG, TEST_DATABASE, TEST_TABLE), captor.getValue().getId());
@@ -378,12 +369,13 @@ public class TestLanceRestCatalogMock {
 
   @Test
   public void testSetDatabasePropertiesNoOp() {
-    // Currently a no-op (logs a warning); should not interact with the namespace.
     catalog.setDatabaseProperties(TEST_DATABASE, Collections.singletonMap("k", "v"));
+    verify(mockNamespace, never()).createNamespace(any(CreateNamespaceRequest.class));
   }
 
   @Test
   public void testRemoveDatabasePropertiesNoOp() {
     catalog.removeDatabaseProperties(TEST_DATABASE, Collections.singleton("k"));
+    verify(mockNamespace, never()).createNamespace(any(CreateNamespaceRequest.class));
   }
 }

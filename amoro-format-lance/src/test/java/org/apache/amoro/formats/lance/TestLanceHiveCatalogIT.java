@@ -77,16 +77,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * LanceHiveCatalog 集成测试类（使用真实 HMSMockServer 环境）
+ * Integration tests for LanceHiveCatalog (using a real HMSMockServer environment)
  *
- * <p>本测试类通过 {@link TestHMS}（HMSMockServer）创建真实的 Hive Metastore 环境， 使用 {@link Hive3Namespace} 连接
- * HMSMockServer，构建真实的 {@link LanceHiveCatalog} 实例， 测试 {@link LanceHiveCatalog} 的所有公开接口方法。
+ * <p>This test class creates a real Hive Metastore environment via {@link TestHMS} (HMSMockServer),
+ * connects to HMSMockServer using {@link Hive3Namespace}, builds a real {@link LanceHiveCatalog}
+ * instance, and tests all public methods of {@link LanceHiveCatalog}.
  *
- * <p>与 {@link TestLanceHiveCatalogMock} 的区别：
+ * <p>Differences from {@link TestLanceHiveCatalogMock}:
  *
  * <ul>
- *   <li>Mock 测试使用 Mockito mock LanceNamespace，验证方法调用参数
- *   <li>本测试使用真实的 Hive3Namespace + HMSMockServer，验证端到端功能
+ *   <li>Mock tests use Mockito to mock LanceNamespace and verify method call parameters
+ *   <li>This test uses a real Hive3Namespace + HMSMockServer to verify end-to-end functionality
  * </ul>
  */
 public class TestLanceHiveCatalogIT {
@@ -98,7 +99,7 @@ public class TestLanceHiveCatalogIT {
   private static final String TEST_DB2 = "test_db2";
   private static final String TEST_TABLE = "test_table";
 
-  /** Arrow Schema 定义，用于创建 Lance 表 */
+  /** Arrow Schema definition, used for creating Lance tables */
   private static final Schema ARROW_SCHEMA =
       new Schema(
           Arrays.asList(
@@ -106,7 +107,7 @@ public class TestLanceHiveCatalogIT {
               Field.nullable("name", ArrowType.Utf8.INSTANCE),
               Field.nullable("age", new ArrowType.Int(32, true))));
 
-  /** 使用 HMSMockServer 模拟 Hive Metastore */
+  /** Use HMSMockServer to simulate Hive Metastore */
   @ClassRule public static TestHMS TEST_HMS = new TestHMS();
 
   @Rule public TemporaryFolder tempFolder = new TemporaryFolder();
@@ -120,7 +121,7 @@ public class TestLanceHiveCatalogIT {
     allocator = new RootAllocator(Long.MAX_VALUE);
     warehouseLocation = tempFolder.newFolder("lance_warehouse").getAbsolutePath();
 
-    // 使用真实的 Hive3Namespace 连接 HMSMockServer
+    // Use a real Hive3Namespace to connect to HMSMockServer
     Hive3Namespace namespace = new Hive3Namespace();
     namespace.setHadoopConf(TEST_HMS.getHiveConf());
 
@@ -139,7 +140,7 @@ public class TestLanceHiveCatalogIT {
 
   @After
   public void tearDown() {
-    // 清理测试创建的数据库和表
+    // Clean up databases and tables created by tests
     try {
       for (String db : catalog.listDatabases()) {
         if ("default".equals(db)) {
@@ -151,16 +152,16 @@ public class TestLanceHiveCatalogIT {
             try {
               catalog.dropTable(db, table, true);
             } catch (Exception e) {
-              LOG.warn("清理表 {}.{} 失败: {}", db, table, e.getMessage());
+              LOG.warn("Failed to clean up table {}.{}: {}", db, table, e.getMessage());
             }
           }
           catalog.dropDatabase(db);
         } catch (Exception e) {
-          LOG.warn("清理数据库 {} 失败: {}", db, e.getMessage());
+          LOG.warn("Failed to clean up database {}: {}", db, e.getMessage());
         }
       }
     } catch (Exception e) {
-      LOG.warn("清理测试数据失败: {}", e.getMessage());
+      LOG.warn("Failed to clean up test data: {}", e.getMessage());
     }
 
     if (allocator != null) {
@@ -168,7 +169,7 @@ public class TestLanceHiveCatalogIT {
     }
   }
 
-  // ==================== name() 测试 ====================
+  // ==================== name() Tests ====================
 
   @Test
   public void testName() {
@@ -181,14 +182,14 @@ public class TestLanceHiveCatalogIT {
     assertEquals("hive", nullNameCatalog.name());
   }
 
-  // ==================== createDatabase 测试 ====================
+  // ==================== createDatabase Tests ====================
 
   @Test
   public void testCreateDatabase() {
     catalog.createDatabase(TEST_DB);
 
     List<String> databases = catalog.listDatabases();
-    assertTrue("创建的数据库应出现在列表中", databases.contains(TEST_DB));
+    assertTrue("created database should appear in the list", databases.contains(TEST_DB));
   }
 
   @Test
@@ -200,17 +201,17 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB, metadata);
 
     List<String> databases = catalog.listDatabases();
-    assertTrue("创建的数据库应出现在列表中", databases.contains(TEST_DB));
+    assertTrue("created database should appear in the list", databases.contains(TEST_DB));
   }
 
   @Test
   public void testCreateDatabaseAlreadyExists() {
     catalog.createDatabase(TEST_DB);
-    assertTrue("数据库应已存在", catalog.databaseExists(TEST_DB));
+    assertTrue("database should already exist", catalog.databaseExists(TEST_DB));
 
-    // 重复创建同名数据库应抛出 AlreadyExistsException
+    // Creating a duplicate database should throw AlreadyExistsException
     assertThrows(
-        "重复创建数据库应抛出 AlreadyExistsException",
+        "creating a duplicate database should throw AlreadyExistsException",
         AlreadyExistsException.class,
         () -> catalog.createDatabase(TEST_DB));
   }
@@ -218,26 +219,26 @@ public class TestLanceHiveCatalogIT {
   @Test
   public void testCreateDatabaseWithMetadataAlreadyExists() {
     catalog.createDatabase(TEST_DB);
-    assertTrue("数据库应已存在", catalog.databaseExists(TEST_DB));
+    assertTrue("database should already exist", catalog.databaseExists(TEST_DB));
 
     Map<String, String> metadata = new HashMap<>();
     metadata.put("owner", "test_user");
 
-    // 带 metadata 重复创建同名数据库也应抛出 AlreadyExistsException
+    // Creating a duplicate database with metadata should also throw AlreadyExistsException
     assertThrows(
-        "带 metadata 重复创建数据库应抛出 AlreadyExistsException",
+        "creating a duplicate database with metadata should throw AlreadyExistsException",
         AlreadyExistsException.class,
         () -> catalog.createDatabase(TEST_DB, metadata));
   }
 
-  // ==================== listDatabases 测试 ====================
+  // ==================== listDatabases Tests ====================
 
   @Test
   public void testListDatabasesEmpty() {
     List<String> databases = catalog.listDatabases();
-    assertNotNull("数据库列表不应为 null", databases);
-    // HMSMockServer hive catalog 默认有 default 数据库
-    assertTrue("应至少包含 default 数据库", databases.contains("default"));
+    assertNotNull("database list should not be null", databases);
+    // HMSMockServer hive catalog has a default database by default
+    assertTrue("should contain at least the default database", databases.contains("default"));
   }
 
   @Test
@@ -246,45 +247,46 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB2);
 
     List<String> databases = catalog.listDatabases();
-    assertTrue("应包含 test_db", databases.contains(TEST_DB));
-    assertTrue("应包含 test_db2", databases.contains(TEST_DB2));
+    assertTrue("should contain test_db", databases.contains(TEST_DB));
+    assertTrue("should contain test_db2", databases.contains(TEST_DB2));
   }
 
-  // ==================== databaseExists 测试 ====================
+  // ==================== databaseExists Tests ====================
 
   @Test
   public void testDatabaseExistsTrue() {
     catalog.createDatabase(TEST_DB);
-    assertTrue("已创建的数据库应存在", catalog.databaseExists(TEST_DB));
+    assertTrue("created database should exist", catalog.databaseExists(TEST_DB));
   }
 
   @Test
   public void testDatabaseExistsFalse() {
-    assertFalse("不存在的数据库应返回 false", catalog.databaseExists("non_existent_db"));
+    assertFalse(
+        "non-existent database should return false", catalog.databaseExists("non_existent_db"));
   }
 
   @Test
   public void testDatabaseExistsDefault() {
-    assertTrue("default 数据库应存在", catalog.databaseExists("default"));
+    assertTrue("default database should exist", catalog.databaseExists("default"));
   }
 
-  // ==================== dropDatabase 测试 ====================
+  // ==================== dropDatabase Tests ====================
 
   @Test
   public void testDropDatabase() {
     catalog.createDatabase(TEST_DB);
-    assertTrue("数据库应存在", catalog.databaseExists(TEST_DB));
+    assertTrue("database should exist", catalog.databaseExists(TEST_DB));
 
     catalog.dropDatabase(TEST_DB);
-    assertFalse("删除后数据库不应存在", catalog.databaseExists(TEST_DB));
+    assertFalse("database should not exist after drop", catalog.databaseExists(TEST_DB));
   }
 
   @Test
   public void testDropDatabaseNotExists() {
-    assertFalse("数据库不应存在", catalog.databaseExists("non_existent_db"));
+    assertFalse("database should not exist", catalog.databaseExists("non_existent_db"));
 
     assertThrows(
-        "删除不存在的数据库应抛出 NoSuchDatabaseException",
+        "dropping a non-existent database should throw NoSuchDatabaseException",
         NoSuchDatabaseException.class,
         () -> catalog.dropDatabase("non_existent_db"));
   }
@@ -293,50 +295,50 @@ public class TestLanceHiveCatalogIT {
   public void testDropNonEmptyDatabase() throws IOException {
     catalog.createDatabase(TEST_DB);
 
-    // 在数据库中创建一张表
+    // Create a table in the database
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "blocking_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "blocking_table");
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertTrue("表应存在", catalog.tableExists(TEST_DB, "blocking_table"));
+    assertTrue("table should exist", catalog.tableExists(TEST_DB, "blocking_table"));
 
-    // 删除非空数据库应抛出 DatabaseNotEmptyException
+    // Dropping a non-empty database should throw DatabaseNotEmptyException
     assertThrows(
-        "删除非空数据库应抛出 DatabaseNotEmptyException",
+        "dropping a non-empty database should throw DatabaseNotEmptyException",
         DatabaseNotEmptyException.class,
         () -> catalog.dropDatabase(TEST_DB));
 
-    // 验证数据库和表仍然存在
-    assertTrue("数据库应仍然存在", catalog.databaseExists(TEST_DB));
-    assertTrue("表应仍然存在", catalog.tableExists(TEST_DB, "blocking_table"));
+    // Verify database and table still exist
+    assertTrue("database should still exist", catalog.databaseExists(TEST_DB));
+    assertTrue("table should still exist", catalog.tableExists(TEST_DB, "blocking_table"));
   }
 
   @Test
   public void testDropNonEmptyDatabaseWithMultipleTables() throws IOException {
     catalog.createDatabase(TEST_DB);
 
-    // 在数据库中创建多张表
+    // Create multiple tables in the database
     for (int i = 1; i <= 3; i++) {
       String loc = warehouseLocation + "/" + TEST_DB + "/" + "multi_table_" + i;
       TableIdentifier tid = TableIdentifier.of(CATALOG_NAME, TEST_DB, "multi_table_" + i);
       catalog.createTable(tid, loc, ARROW_SCHEMA, new HashMap<>());
     }
-    assertEquals("应有 3 张表", 3, catalog.listTables(TEST_DB).size());
+    assertEquals("should have 3 tables", 3, catalog.listTables(TEST_DB).size());
 
-    // 删除非空数据库应抛出异常
+    // Dropping a non-empty database should throw an exception
     assertThrows(
-        "删除含多张表的数据库应抛出 DatabaseNotEmptyException",
+        "dropping a database with multiple tables should throw DatabaseNotEmptyException",
         DatabaseNotEmptyException.class,
         () -> catalog.dropDatabase(TEST_DB));
   }
 
-  // ==================== loadDatabaseMetadata 测试 ====================
+  // ==================== loadDatabaseMetadata Tests ====================
 
   @Test
   public void testLoadDatabaseMetadata() {
     catalog.createDatabase(TEST_DB);
 
     Map<String, String> metadata = catalog.loadDatabaseMetadata(TEST_DB);
-    assertNotNull("数据库元数据不应为 null", metadata);
+    assertNotNull("database metadata should not be null", metadata);
   }
 
   @Test
@@ -346,27 +348,27 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB, props);
 
     Map<String, String> metadata = catalog.loadDatabaseMetadata(TEST_DB);
-    assertEquals("数据库元数据读取异常", "custom.value", metadata.get("custom.key"));
+    assertEquals("database metadata read error", "custom.value", metadata.get("custom.key"));
   }
 
   @Test
   public void testLoadDatabaseMetadataNotExists() {
-    // 加载不存在的数据库的元数据应抛出 NoSuchDatabaseException
+    // Loading metadata of a non-existent database should throw NoSuchDatabaseException
     assertThrows(
-        "加载不存在的数据库元数据应抛出 NoSuchDatabaseException",
+        "loading metadata of a non-existent database should throw NoSuchDatabaseException",
         NoSuchDatabaseException.class,
         () -> catalog.loadDatabaseMetadata("non_existent_db"));
   }
 
-  // ==================== listTables 测试 ====================
+  // ==================== listTables Tests ====================
 
   @Test
   public void testListTablesEmpty() {
     catalog.createDatabase(TEST_DB);
 
     List<String> tables = catalog.listTables(TEST_DB);
-    assertNotNull("表列表不应为 null", tables);
-    assertTrue("新数据库的表列表应为空", tables.isEmpty());
+    assertNotNull("table list should not be null", tables);
+    assertTrue("table list of a new database should be empty", tables.isEmpty());
   }
 
   @Test
@@ -378,42 +380,61 @@ public class TestLanceHiveCatalogIT {
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
     List<String> tables = catalog.listTables(TEST_DB);
-    assertTrue("应包含创建的表", tables.contains(TEST_TABLE));
+    assertTrue("should contain the created table", tables.contains(TEST_TABLE));
   }
 
-  // ==================== 在不存在的数据库中操作表 ====================
+  @Test
+  public void testListTablesMoreThanPageSize() throws IOException {
+    catalog.createDatabase(TEST_DB);
+    int tableCount = 110;
+    for (int i = 0; i < tableCount; i++) {
+      String tableName = "page_table_" + i;
+      String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + tableName;
+      TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, tableName);
+      catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
+    }
+
+    List<String> tables = catalog.listTables(TEST_DB);
+    assertEquals(
+        "pagination fix should list all " + tableCount + " tables", tableCount, tables.size());
+    assertTrue("should contain the first table", tables.contains("page_table_0"));
+    assertTrue("should contain the last table", tables.contains("page_table_" + (tableCount - 1)));
+  }
+
+  // ==================== Operations on Non-Existent Database ====================
 
   @Test
   public void testLoadTableFromNonExistentDatabase() {
-    // 在不存在的数据库中加载表应抛出 NoSuchTableException
-    assertFalse("数据库不应存在", catalog.databaseExists("non_existent_db"));
+    // Loading a table from a non-existent database should throw NoSuchTableException
+    assertFalse("database should not exist", catalog.databaseExists("non_existent_db"));
     assertThrows(
-        "从不存在的数据库加载表应抛出 NoSuchDatabaseException",
+        "loading a table from a non-existent database should throw NoSuchDatabaseException",
         NoSuchDatabaseException.class,
         () -> catalog.loadTable("non_existent_db", "some_table"));
   }
 
   @Test
   public void testDropTableFromNonExistentDatabase() {
-    // 在不存在的数据库中删除表应抛出 NoSuchTableException
-    assertFalse("数据库不应存在", catalog.databaseExists("non_existent_db"));
+    // Dropping a table from a non-existent database should throw NoSuchTableException
+    assertFalse("database should not exist", catalog.databaseExists("non_existent_db"));
     assertThrows(
-        "从不存在的数据库删除表应抛出 NoSuchDatabaseException",
+        "dropping a table from a non-existent database should throw NoSuchDatabaseException",
         NoSuchDatabaseException.class,
         () -> catalog.dropTable("non_existent_db", "some_table", true));
   }
 
   @Test
   public void testDeregisterTableFromNonExistentDatabase() {
-    // 在不存在的数据库中取消注册表应抛出 NoSuchTableException
-    assertFalse("数据库不应存在", catalog.databaseExists("non_existent_db"));
+    // Deregistering a table from a non-existent database should throw NoSuchTableException
+    assertFalse("database should not exist", catalog.databaseExists("non_existent_db"));
     assertThrows(
-        "从不存在的数据库取消注册表应抛出 NoSuchDatabaseException",
+        "deregistering a table from a non-existent database should throw NoSuchDatabaseException",
         NoSuchDatabaseException.class,
         () -> catalog.deregisterTable("non_existent_db", "some_table"));
   }
 
-  // ==================== setDatabaseProperties / removeDatabaseProperties 不支持操作测试
+  // ==================== setDatabaseProperties / removeDatabaseProperties Unsupported Operation
+  // Tests
   // ====================
 
   @Test
@@ -421,7 +442,7 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB);
     Map<String, String> newProps = new HashMap<>();
     newProps.put("key", "value");
-    // todo hiveNamespace不支持
+    // TODO: hiveNamespace does not support this
     catalog.setDatabaseProperties(TEST_DB, newProps);
   }
 
@@ -431,16 +452,18 @@ public class TestLanceHiveCatalogIT {
 
     java.util.Set<String> keysToRemove = new java.util.HashSet<>();
     keysToRemove.add("key");
-    // todo hiveNamespace不支持
+    // TODO: hiveNamespace does not support this
     catalog.removeDatabaseProperties(TEST_DB, keysToRemove);
   }
 
-  // ==================== tableExists 测试 ====================
+  // ==================== tableExists Tests ====================
 
   @Test
   public void testTableExistsFalse() {
     catalog.createDatabase(TEST_DB);
-    assertFalse("不存在的表应返回 false", catalog.tableExists(TEST_DB, "non_existent_table"));
+    assertFalse(
+        "non-existent table should return false",
+        catalog.tableExists(TEST_DB, "non_existent_table"));
   }
 
   @Test
@@ -451,10 +474,10 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, TEST_TABLE);
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertTrue("已创建的表应存在", catalog.tableExists(TEST_DB, TEST_TABLE));
+    assertTrue("created table should exist", catalog.tableExists(TEST_DB, TEST_TABLE));
   }
 
-  // ==================== createTable 测试 ====================
+  // ==================== createTable Tests ====================
 
   @Test
   public void testCreateTable() throws IOException {
@@ -466,9 +489,9 @@ public class TestLanceHiveCatalogIT {
     LanceTable lanceTable =
         catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertNotNull("创建的表不应为 null", lanceTable);
-    assertEquals("表标识符应匹配", tableId, lanceTable.id());
-    assertNotNull("原始 Dataset 不应为 null", lanceTable.originalTable());
+    assertNotNull("created table should not be null", lanceTable);
+    assertEquals("table identifier should match", tableId, lanceTable.id());
+    assertNotNull("original Dataset should not be null", lanceTable.originalTable());
   }
 
   @Test
@@ -482,8 +505,9 @@ public class TestLanceHiveCatalogIT {
 
     LanceTable lanceTable = catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, tableProps);
 
-    assertNotNull("创建的表不应为 null", lanceTable);
-    assertEquals("表属性应匹配", "custom.value", lanceTable.properties().get("custom.key"));
+    assertNotNull("created table should not be null", lanceTable);
+    assertEquals(
+        "table properties should match", "custom.value", lanceTable.properties().get("custom.key"));
   }
 
   @Test
@@ -492,20 +516,22 @@ public class TestLanceHiveCatalogIT {
 
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "no_loc_table");
 
-    // 不传递 location（传 null），由 Hive 自动分配路径
+    // Pass null location, let Hive auto-assign the path
     LanceTable lanceTable = catalog.createTable(tableId, null, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("不传 location 创建的表不应为 null", lanceTable);
-    assertEquals("表标识符应匹配", tableId, lanceTable.id());
-    assertNotNull("原始 Dataset 不应为 null", lanceTable.originalTable());
-    assertNotNull("location 应不为 null", lanceTable.properties().get(LanceProperties.TABLE_LOCATION));
-
-    // 验证表已在 Hive 中注册且可正常加载
-    assertTrue("表应存在", catalog.tableExists(TEST_DB, "no_loc_table"));
-    AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "no_loc_table");
-    assertNotNull("加载的表不应为 null", loadedTable);
-    assertEquals("表名应匹配", "no_loc_table", loadedTable.id().getTableName());
+    assertNotNull("table created without location should not be null", lanceTable);
+    assertEquals("table identifier should match", tableId, lanceTable.id());
+    assertNotNull("original Dataset should not be null", lanceTable.originalTable());
     assertNotNull(
-        "location 应不为 null", loadedTable.properties().get(LanceProperties.TABLE_LOCATION));
+        "location should not be null", lanceTable.properties().get(LanceProperties.TABLE_LOCATION));
+
+    // Verify the table is registered in Hive and can be loaded
+    assertTrue("table should exist", catalog.tableExists(TEST_DB, "no_loc_table"));
+    AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "no_loc_table");
+    assertNotNull("loaded table should not be null", loadedTable);
+    assertEquals("table name should match", "no_loc_table", loadedTable.id().getTableName());
+    assertNotNull(
+        "location should not be null",
+        loadedTable.properties().get(LanceProperties.TABLE_LOCATION));
   }
 
   @Test
@@ -514,16 +540,16 @@ public class TestLanceHiveCatalogIT {
 
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "empty_loc_table");
 
-    // 传递空字符串 location，由 Hive 自动分配路径
+    // Pass empty string location, let Hive auto-assign the path
     LanceTable lanceTable = catalog.createTable(tableId, "", ARROW_SCHEMA, new HashMap<>());
 
-    assertNotNull("空 location 创建的表不应为 null", lanceTable);
-    assertEquals("表标识符应匹配", tableId, lanceTable.id());
+    assertNotNull("table created with empty location should not be null", lanceTable);
+    assertEquals("table identifier should match", tableId, lanceTable.id());
 
-    // 验证表已在 Hive 中注册且可正常加载
-    assertTrue("表应存在", catalog.tableExists(TEST_DB, "empty_loc_table"));
+    // Verify the table is registered in Hive and can be loaded
+    assertTrue("table should exist", catalog.tableExists(TEST_DB, "empty_loc_table"));
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "empty_loc_table");
-    assertNotNull("加载的表不应为 null", loadedTable);
+    assertNotNull("loaded table should not be null", loadedTable);
   }
 
   @Test
@@ -534,17 +560,17 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "dup_table");
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertTrue("表应已存在", catalog.tableExists(TEST_DB, "dup_table"));
+    assertTrue("table should already exist", catalog.tableExists(TEST_DB, "dup_table"));
 
-    // 重复创建同名表应抛出 AlreadyExistsException
+    // Creating a duplicate table should throw AlreadyExistsException
     String tableLocation2 = warehouseLocation + "/" + TEST_DB + "/" + "dup_table_2";
     assertThrows(
-        "重复创建表应抛出 AlreadyExistsException",
+        "creating a duplicate table should throw AlreadyExistsException",
         AlreadyExistsException.class,
         () -> catalog.createTable(tableId, tableLocation2, ARROW_SCHEMA, new HashMap<>()));
   }
 
-  // ==================== declareTable 测试 ====================
+  // ==================== declareTable Tests ====================
 
   @Test
   public void testDeclareTable() {
@@ -554,10 +580,10 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "declared_table");
 
     var response = catalog.declareTable(tableId, tableLocation, new HashMap<>());
-    assertNotNull("declareTable 响应不应为 null", response);
+    assertNotNull("declareTable response should not be null", response);
 
-    // 验证表已在 Hive 中注册
-    assertTrue("声明的表应存在", catalog.tableExists(TEST_DB, "declared_table"));
+    // Verify table is registered in Hive
+    assertTrue("declared table should exist", catalog.tableExists(TEST_DB, "declared_table"));
   }
 
   @Test
@@ -566,9 +592,9 @@ public class TestLanceHiveCatalogIT {
 
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "auto_loc_table");
 
-    // 不提供 location，由 Hive 自动分配
+    // No location provided, let Hive auto-assign
     var response = catalog.declareTable(tableId, null, new HashMap<>());
-    assertNotNull("declareTable 响应不应为 null", response);
+    assertNotNull("declareTable response should not be null", response);
   }
 
   @Test
@@ -578,18 +604,18 @@ public class TestLanceHiveCatalogIT {
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "dup_declare_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "dup_declare_table");
 
-    // 第一次声明应成功
+    // First declare should succeed
     catalog.declareTable(tableId, tableLocation, new HashMap<>());
-    assertTrue("表应已存在", catalog.tableExists(TEST_DB, "dup_declare_table"));
+    assertTrue("table should already exist", catalog.tableExists(TEST_DB, "dup_declare_table"));
 
-    // 重复声明同名表应抛出 AlreadyExistsException
+    // Declaring a duplicate table should throw AlreadyExistsException
     assertThrows(
-        "重复声明表应抛出 AlreadyExistsException",
+        "declaring a duplicate table should throw AlreadyExistsException",
         AlreadyExistsException.class,
         () -> catalog.declareTable(tableId, tableLocation, new HashMap<>()));
   }
 
-  // ==================== loadTable 测试 ====================
+  // ==================== loadTable Tests ====================
 
   @Test
   public void testLoadTable() throws IOException {
@@ -601,10 +627,10 @@ public class TestLanceHiveCatalogIT {
 
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, TEST_TABLE);
 
-    assertNotNull("加载的表不应为 null", loadedTable);
-    assertEquals("表名应匹配", TEST_TABLE, loadedTable.id().getTableName());
-    assertEquals("数据库名应匹配", TEST_DB, loadedTable.id().getDatabase());
-    assertEquals("Catalog 名应匹配", CATALOG_NAME, loadedTable.id().getCatalog());
+    assertNotNull("loaded table should not be null", loadedTable);
+    assertEquals("table name should match", TEST_TABLE, loadedTable.id().getTableName());
+    assertEquals("database name should match", TEST_DB, loadedTable.id().getDatabase());
+    assertEquals("catalog name should match", CATALOG_NAME, loadedTable.id().getCatalog());
   }
 
   @Test
@@ -612,7 +638,7 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB);
 
     assertThrows(
-        "加载不存在的表应抛出 NoSuchTableException",
+        "loading a non-existent table should throw NoSuchTableException",
         NoSuchTableException.class,
         () -> catalog.loadTable(TEST_DB, "non_existent_table"));
   }
@@ -624,29 +650,33 @@ public class TestLanceHiveCatalogIT {
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "declared_only_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "declared_only_table");
 
-    // 仅通过 declareTable 注册表，不创建实际数据
+    // Register table only via declareTable, do not create actual data
     DeclareTableResponse declareResponse =
         catalog.declareTable(tableId, tableLocation, new HashMap<>());
-    assertNotNull("declareTable 响应不应为 null", declareResponse);
+    assertNotNull("declareTable response should not be null", declareResponse);
 
-    // 表已在 HMS 中注册
-    assertTrue("声明的表应存在", catalog.tableExists(TEST_DB, "declared_only_table"));
+    // Table is registered in HMS
+    assertTrue("declared table should exist", catalog.tableExists(TEST_DB, "declared_only_table"));
 
-    // loadTable 应返回空 LanceTable（因为实际数据不存在）
+    // loadTable should return an empty LanceTable (actual data does not exist)
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "declared_only_table");
-    assertNotNull("加载的表不应为 null", loadedTable);
-    assertEquals("表名应匹配", "declared_only_table", loadedTable.id().getTableName());
-    assertEquals("数据库名应匹配", TEST_DB, loadedTable.id().getDatabase());
+    assertNotNull("loaded table should not be null", loadedTable);
+    assertEquals("table name should match", "declared_only_table", loadedTable.id().getTableName());
+    assertEquals("database name should match", TEST_DB, loadedTable.id().getDatabase());
 
-    // 验证空表标志
-    assertEquals("应标记为空表", "true", loadedTable.properties().get(LanceProperties.TABLE_EMPTY));
+    // Verify empty table flag
+    assertEquals(
+        "should be marked as empty table",
+        "true",
+        loadedTable.properties().get(LanceProperties.TABLE_EMPTY));
     assertNotNull(
-        "properties 应包含 location", loadedTable.properties().get(LanceProperties.TABLE_LOCATION));
+        "properties should contain location",
+        loadedTable.properties().get(LanceProperties.TABLE_LOCATION));
 
-    // 验证 originalTable 为 null（因为没有实际数据）
+    // Verify originalTable is null (no actual data)
     LanceTable lanceTable = (LanceTable) loadedTable;
-    assertNull("空表的 Dataset 应为 null", lanceTable.originalTable());
-    assertNull("空表的 snapshot 应为 null", lanceTable.currentSnapshot());
+    assertNull("empty table Dataset should be null", lanceTable.originalTable());
+    assertNull("empty table snapshot should be null", lanceTable.currentSnapshot());
   }
 
   @Test
@@ -655,26 +685,31 @@ public class TestLanceHiveCatalogIT {
 
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "declared_no_loc_table");
 
-    // 不提供 location，由 Hive 自动分配
+    // No location provided, let Hive auto-assign
     DeclareTableResponse declareResponse = catalog.declareTable(tableId, null, new HashMap<>());
-    assertNotNull("declareTable 响应不应为 null", declareResponse);
+    assertNotNull("declareTable response should not be null", declareResponse);
 
-    // loadTable 应返回空 LanceTable
+    // loadTable should return an empty LanceTable
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "declared_no_loc_table");
-    assertNotNull("加载的表不应为 null", loadedTable);
-    assertEquals("表名应匹配", "declared_no_loc_table", loadedTable.id().getTableName());
+    assertNotNull("loaded table should not be null", loadedTable);
+    assertEquals(
+        "table name should match", "declared_no_loc_table", loadedTable.id().getTableName());
 
-    // 验证空表标志
-    assertEquals("应标记为空表", "true", loadedTable.properties().get(LanceProperties.TABLE_EMPTY));
+    // Verify empty table flag
+    assertEquals(
+        "should be marked as empty table",
+        "true",
+        loadedTable.properties().get(LanceProperties.TABLE_EMPTY));
     assertNotNull(
-        "properties 应包含 location", loadedTable.properties().get(LanceProperties.TABLE_LOCATION));
+        "properties should contain location",
+        loadedTable.properties().get(LanceProperties.TABLE_LOCATION));
 
-    // 验证 originalTable 为 null
+    // Verify originalTable is null
     LanceTable lanceTable = (LanceTable) loadedTable;
-    assertNull("空表的 Dataset 应为 null", lanceTable.originalTable());
+    assertNull("empty table Dataset should be null", lanceTable.originalTable());
   }
 
-  // ==================== dropTable 测试 ====================
+  // ==================== dropTable Tests ====================
 
   @Test
   public void testDropTableWithoutPurge() throws IOException {
@@ -684,16 +719,17 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, TEST_TABLE);
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertTrue("删除前表应存在", catalog.tableExists(TEST_DB, TEST_TABLE));
+    assertTrue("table should exist before drop", catalog.tableExists(TEST_DB, TEST_TABLE));
 
-    // purge=false 仅取消注册，不删除数据
+    // purge=false only deregisters, does not delete data
     boolean result = catalog.dropTable(TEST_DB, TEST_TABLE, false);
-    assertTrue("dropTable 应返回 true", result);
-    assertFalse("取消注册后表不应存在", catalog.tableExists(TEST_DB, TEST_TABLE));
+    assertTrue("dropTable should return true", result);
+    assertFalse(
+        "table should not exist after deregister", catalog.tableExists(TEST_DB, TEST_TABLE));
 
-    // 验证数据文件仍然存在（仅取消注册，不删除数据）
+    // Verify data files still exist (only deregistered, data not deleted)
     File tableDir = new File(tableLocation);
-    assertTrue("purge=false 时数据文件应仍然存在", tableDir.exists());
+    assertTrue("data files should still exist when purge=false", tableDir.exists());
   }
 
   @Test
@@ -704,16 +740,17 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "purge_table");
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertTrue("删除前表应存在", catalog.tableExists(TEST_DB, "purge_table"));
+    assertTrue("table should exist before drop", catalog.tableExists(TEST_DB, "purge_table"));
 
-    // purge=true 删除数据
+    // purge=true deletes data
     boolean result = catalog.dropTable(TEST_DB, "purge_table", true);
-    assertTrue("dropTable with purge 应返回 true", result);
-    assertFalse("purge 删除后表不应存在", catalog.tableExists(TEST_DB, "purge_table"));
+    assertTrue("dropTable with purge should return true", result);
+    assertFalse(
+        "table should not exist after purge drop", catalog.tableExists(TEST_DB, "purge_table"));
 
-    // 验证数据文件已被删除
+    // Verify data files have been deleted
     File tableDir = new File(tableLocation);
-    assertFalse("purge=true 时数据文件应被删除", tableDir.exists());
+    assertFalse("data files should be deleted when purge=true", tableDir.exists());
   }
 
   @Test
@@ -721,7 +758,7 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB);
 
     assertThrows(
-        "删除不存在的表应抛出 NoSuchTableException（purge=true）",
+        "dropping a non-existent table should throw NoSuchTableException (purge=true)",
         NoSuchTableException.class,
         () -> catalog.dropTable(TEST_DB, "non_existent_table", true));
   }
@@ -731,12 +768,12 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB);
 
     assertThrows(
-        "删除不存在的表应抛出 NoSuchTableException（purge=false）",
+        "dropping a non-existent table should throw NoSuchTableException (purge=false)",
         NoSuchTableException.class,
         () -> catalog.dropTable(TEST_DB, "non_existent_table", false));
   }
 
-  // ==================== deregisterTable 测试 ====================
+  // ==================== deregisterTable Tests ====================
 
   @Test
   public void testDeregisterTable() throws IOException {
@@ -746,11 +783,12 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "dereg_table");
     catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertTrue("取消注册前表应存在", catalog.tableExists(TEST_DB, "dereg_table"));
+    assertTrue("table should exist before deregister", catalog.tableExists(TEST_DB, "dereg_table"));
 
     var response = catalog.deregisterTable(TEST_DB, "dereg_table");
-    assertNotNull("deregisterTable 响应不应为 null", response);
-    assertFalse("取消注册后表不应存在", catalog.tableExists(TEST_DB, "dereg_table"));
+    assertNotNull("deregisterTable response should not be null", response);
+    assertFalse(
+        "table should not exist after deregister", catalog.tableExists(TEST_DB, "dereg_table"));
   }
 
   @Test
@@ -758,12 +796,12 @@ public class TestLanceHiveCatalogIT {
     catalog.createDatabase(TEST_DB);
 
     assertThrows(
-        "取消注册不存在的表应抛出 NoSuchTableException",
+        "deregistering a non-existent table should throw NoSuchTableException",
         NoSuchTableException.class,
         () -> catalog.deregisterTable(TEST_DB, "non_existent_table"));
   }
 
-  // ==================== getTableLocation 测试 ====================
+  // ==================== getTableLocation Tests ====================
 
   @Test
   public void testGetTableLocation() throws IOException {
@@ -773,12 +811,14 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "loc_table");
     LanceTable createdTable =
         catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("创建的表不应为 null", createdTable);
+    assertNotNull("created table should not be null", createdTable);
 
     String location = catalog.getTableLocation(TEST_DB, "loc_table");
-    assertNotNull("location 不应为 null", location);
-    assertFalse("location 不应为空", location.isEmpty());
-    assertTrue("location 应包含表名或表路径片段，实际: " + location, location.contains("loc_table"));
+    assertNotNull("location should not be null", location);
+    assertFalse("location should not be empty", location.isEmpty());
+    assertTrue(
+        "location should contain table name or path fragment, actual: " + location,
+        location.contains("loc_table"));
   }
 
   @Test
@@ -793,20 +833,22 @@ public class TestLanceHiveCatalogIT {
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "loc_match_table");
     String loadedLocation = loadedTable.properties().get(LanceProperties.TABLE_LOCATION);
 
-    assertNotNull("getTableLocation 返回值不应为 null", directLocation);
-    assertNotNull("loadTable 返回的 location 不应为 null", loadedLocation);
+    assertNotNull("getTableLocation return value should not be null", directLocation);
+    assertNotNull("location from loadTable should not be null", loadedLocation);
     assertEquals(
-        "getTableLocation 应与 loadTable 得到的 location 一致", "file:" + loadedLocation, directLocation);
+        "getTableLocation should match location from loadTable",
+        "file:" + loadedLocation,
+        directLocation);
   }
 
-  // ==================== extractStorageOptions 测试 ====================
+  // ==================== extractStorageOptions Tests ====================
 
   @Test
   public void testExtractStorageOptionsEmpty() {
     Map<String, String> props = new HashMap<>();
     Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(props);
-    assertNotNull("存储选项不应为 null", storageOptions);
-    assertTrue("空属性应返回空存储选项", storageOptions.isEmpty());
+    assertNotNull("storage options should not be null", storageOptions);
+    assertTrue("empty properties should return empty storage options", storageOptions.isEmpty());
   }
 
   @Test
@@ -819,68 +861,70 @@ public class TestLanceHiveCatalogIT {
     props.put("unrelated.key", "unrelated.value");
 
     Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(props);
-    assertEquals("应提取 4 个 COS 配置", 4, storageOptions.size());
-    assertEquals("region 应匹配", "ap-guangzhou", storageOptions.get(COS_REGION));
-    assertEquals("secret_id 应匹配", "test-secret-id", storageOptions.get(COS_SECRET_ID));
-    assertEquals("secret_key 应匹配", "test-secret-key", storageOptions.get(COS_SECRET_KEY));
+    assertEquals("should extract 4 COS configs", 4, storageOptions.size());
+    assertEquals("region should match", "ap-guangzhou", storageOptions.get(COS_REGION));
+    assertEquals("secret_id should match", "test-secret-id", storageOptions.get(COS_SECRET_ID));
+    assertEquals("secret_key should match", "test-secret-key", storageOptions.get(COS_SECRET_KEY));
     assertEquals(
-        "security_token 应匹配", "test-security-token", storageOptions.get(COS_SECURITY_TOKEN));
-    assertFalse("不应包含无关配置", storageOptions.containsKey("unrelated.key"));
+        "security_token should match",
+        "test-security-token",
+        storageOptions.get(COS_SECURITY_TOKEN));
+    assertFalse("should not contain unrelated config", storageOptions.containsKey("unrelated.key"));
   }
 
   @Test
   public void testExtractStorageOptionsPartial() {
     Map<String, String> props = new HashMap<>();
     props.put(COS_REGION, "ap-beijing");
-    // 只设置 region，不设置 secret_id 和 secret_key
+    // Only set region, not secret_id and secret_key
 
     Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(props);
-    assertEquals("应只提取 1 个配置", 1, storageOptions.size());
-    assertEquals("region 应匹配", "ap-beijing", storageOptions.get(COS_REGION));
+    assertEquals("should extract only 1 config", 1, storageOptions.size());
+    assertEquals("region should match", "ap-beijing", storageOptions.get(COS_REGION));
   }
 
-  // ==================== 端到端流程测试 ====================
+  // ==================== End-to-End Flow Tests ====================
 
   @Test
   public void testEndToEndCreateAndLoadTable() throws IOException {
-    // 1. 创建数据库
+    // 1. Create database
     catalog.createDatabase(TEST_DB);
-    assertTrue("数据库应存在", catalog.databaseExists(TEST_DB));
+    assertTrue("database should exist", catalog.databaseExists(TEST_DB));
 
-    // 2. 创建表
+    // 2. Create table
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + TEST_TABLE;
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, TEST_TABLE);
     LanceTable createdTable =
         catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("创建的表不应为 null", createdTable);
+    assertNotNull("created table should not be null", createdTable);
 
-    // 3. 验证表存在
-    assertTrue("表应存在", catalog.tableExists(TEST_DB, TEST_TABLE));
+    // 3. Verify table exists
+    assertTrue("table should exist", catalog.tableExists(TEST_DB, TEST_TABLE));
     List<String> tables = catalog.listTables(TEST_DB);
-    assertTrue("表列表应包含创建的表", tables.contains(TEST_TABLE));
+    assertTrue("table list should contain the created table", tables.contains(TEST_TABLE));
 
-    // 4. 加载表
+    // 4. Load table
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, TEST_TABLE);
-    assertNotNull("加载的表不应为 null", loadedTable);
-    assertEquals("表标识符应匹配", tableId, loadedTable.id());
+    assertNotNull("loaded table should not be null", loadedTable);
+    assertEquals("table identifier should match", tableId, loadedTable.id());
 
-    // 5. 删除表
+    // 5. Drop table
     boolean dropped = catalog.dropTable(TEST_DB, TEST_TABLE, false);
-    assertTrue("删除应成功", dropped);
-    assertFalse("删除后表不应存在", catalog.tableExists(TEST_DB, TEST_TABLE));
+    assertTrue("drop should succeed", dropped);
+    assertFalse("table should not exist after drop", catalog.tableExists(TEST_DB, TEST_TABLE));
 
-    // 6. 删除数据库
+    // 6. Drop database
     catalog.dropDatabase(TEST_DB);
-    assertFalse("删除后数据库不应存在", catalog.databaseExists(TEST_DB));
+    assertFalse("database should not exist after drop", catalog.databaseExists(TEST_DB));
   }
 
   @Test
   public void testEndToEndMultipleDatabasesAndTables() throws IOException {
-    // 创建多个数据库
+    // Create multiple databases
     catalog.createDatabase(TEST_DB);
     catalog.createDatabase(TEST_DB2);
 
-    // 在不同数据库中创建表
+    // Create tables in different databases
     String table1Location = warehouseLocation + "/" + TEST_DB + "/" + "table1";
     TableIdentifier tableId1 = TableIdentifier.of(CATALOG_NAME, TEST_DB, "table1");
     catalog.createTable(tableId1, table1Location, ARROW_SCHEMA, new HashMap<>());
@@ -893,42 +937,42 @@ public class TestLanceHiveCatalogIT {
     TableIdentifier tableId3 = TableIdentifier.of(CATALOG_NAME, TEST_DB2, "table3");
     catalog.createTable(tableId3, table3Location, ARROW_SCHEMA, new HashMap<>());
 
-    // 验证各数据库的表列表
+    // Verify table lists of each database
     List<String> db1Tables = catalog.listTables(TEST_DB);
-    assertEquals("test_db 应有 2 张表", 2, db1Tables.size());
-    assertTrue("应包含 table1", db1Tables.contains("table1"));
-    assertTrue("应包含 table2", db1Tables.contains("table2"));
+    assertEquals("test_db should have 2 tables", 2, db1Tables.size());
+    assertTrue("should contain table1", db1Tables.contains("table1"));
+    assertTrue("should contain table2", db1Tables.contains("table2"));
 
     List<String> db2Tables = catalog.listTables(TEST_DB2);
-    assertEquals("test_db2 应有 1 张表", 1, db2Tables.size());
-    assertTrue("应包含 table3", db2Tables.contains("table3"));
+    assertEquals("test_db2 should have 1 table", 1, db2Tables.size());
+    assertTrue("should contain table3", db2Tables.contains("table3"));
 
-    // 验证数据库列表
+    // Verify database list
     List<String> databases = catalog.listDatabases();
-    assertTrue("应包含 test_db", databases.contains(TEST_DB));
-    assertTrue("应包含 test_db2", databases.contains(TEST_DB2));
+    assertTrue("should contain test_db", databases.contains(TEST_DB));
+    assertTrue("should contain test_db2", databases.contains(TEST_DB2));
   }
 
-  // ==================== 数据写入和读取测试 ====================
+  // ==================== Data Write and Read Tests ====================
 
   @Test
   public void testCreateTableWriteDataAndRead() throws IOException {
     catalog.createDatabase(TEST_DB);
 
-    // 1. 创建默认表
+    // 1. Create default table
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "rw_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "rw_table");
     LanceTable createdTable =
         catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("创建的表不应为 null", createdTable);
+    assertNotNull("created table should not be null", createdTable);
 
-    // 2. 通过 Dataset API 写入模拟数据
+    // 2. Write mock data via Dataset API
     try (VectorSchemaRoot root = VectorSchemaRoot.create(ARROW_SCHEMA, allocator)) {
       BigIntVector idVector = (BigIntVector) root.getVector("id");
       VarCharVector nameVector = (VarCharVector) root.getVector("name");
       IntVector ageVector = (IntVector) root.getVector("age");
 
-      // 写入 3 行数据
+      // Write 3 rows of data
       root.allocateNew();
       idVector.setSafe(0, 1L);
       nameVector.setSafe(0, "Alice".getBytes(StandardCharsets.UTF_8));
@@ -944,7 +988,7 @@ public class TestLanceHiveCatalogIT {
 
       root.setRowCount(3);
 
-      // 使用 APPEND 模式写入数据到已有的 Dataset
+      // Write data to existing Dataset in APPEND mode
       Dataset appendedDataset =
           Dataset.write()
               .allocator(allocator)
@@ -952,15 +996,15 @@ public class TestLanceHiveCatalogIT {
               .reader(vectorSchemaRootToArrowReader(root, allocator))
               .mode(WriteParams.WriteMode.APPEND)
               .execute();
-      assertNotNull("追加写入后的 Dataset 不应为 null", appendedDataset);
+      assertNotNull("Dataset after append should not be null", appendedDataset);
       appendedDataset.close();
     }
 
-    // 3. 重新打开 Dataset 并读取验证
+    // 3. Reopen Dataset and verify by reading
     Dataset readDataset = Dataset.open(tableLocation, allocator);
-    assertEquals("应有 3 行数据", 3, readDataset.countRows());
+    assertEquals("should have 3 rows of data", 3, readDataset.countRows());
 
-    // 通过 Scanner 读取全部数据
+    // Read all data via Scanner
     LanceScanner scanner = readDataset.newScan();
     try (ArrowReader reader = scanner.scanBatches()) {
       List<Long> ids = new ArrayList<>();
@@ -980,45 +1024,45 @@ public class TestLanceHiveCatalogIT {
         }
       }
 
-      assertEquals("应读取 3 行 id", 3, ids.size());
-      assertTrue("应包含 id=1", ids.contains(1L));
-      assertTrue("应包含 id=2", ids.contains(2L));
-      assertTrue("应包含 id=3", ids.contains(3L));
+      assertEquals("should read 3 rows of id", 3, ids.size());
+      assertTrue("should contain id=1", ids.contains(1L));
+      assertTrue("should contain id=2", ids.contains(2L));
+      assertTrue("should contain id=3", ids.contains(3L));
 
-      assertTrue("应包含 Alice", names.contains("Alice"));
-      assertTrue("应包含 Bob", names.contains("Bob"));
-      assertTrue("应包含 Charlie", names.contains("Charlie"));
+      assertTrue("should contain Alice", names.contains("Alice"));
+      assertTrue("should contain Bob", names.contains("Bob"));
+      assertTrue("should contain Charlie", names.contains("Charlie"));
 
-      assertTrue("应包含 age=30", ages.contains(30));
-      assertTrue("应包含 age=25", ages.contains(25));
-      assertTrue("应包含 age=35", ages.contains(35));
+      assertTrue("should contain age=30", ages.contains(30));
+      assertTrue("should contain age=25", ages.contains(25));
+      assertTrue("should contain age=35", ages.contains(35));
     }
 
     readDataset.close();
   }
 
-  // ==================== DATA_STORAGE_VERSION 测试 ====================
+  // ==================== DATA_STORAGE_VERSION Tests ====================
 
   @Test
   public void testCreateTableWithDataStorageVersion22WriteAndRead() throws IOException {
     catalog.createDatabase(TEST_DB);
 
-    // 1. 创建 DATA_STORAGE_VERSION 为 2.2 的 Lance 表
+    // 1. Create a Lance table with DATA_STORAGE_VERSION = 2.2
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "v22_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "v22_table");
     Map<String, String> tableProps = new HashMap<>();
     tableProps.put(LanceProperties.DATA_STORAGE_VERSION, "2.2");
 
     LanceTable createdTable = catalog.createTable(tableId, tableLocation, ARROW_SCHEMA, tableProps);
-    assertNotNull("创建的 v2.2 表不应为 null", createdTable);
+    assertNotNull("created v2.2 table should not be null", createdTable);
 
-    // 2. 通过 Dataset API 写入模拟数据
+    // 2. Write mock data via Dataset API
     try (VectorSchemaRoot root = VectorSchemaRoot.create(ARROW_SCHEMA, allocator)) {
       BigIntVector idVector = (BigIntVector) root.getVector("id");
       VarCharVector nameVector = (VarCharVector) root.getVector("name");
       IntVector ageVector = (IntVector) root.getVector("age");
 
-      // 写入 3 行数据
+      // Write 3 rows of data
       root.allocateNew();
       idVector.setSafe(0, 100L);
       nameVector.setSafe(0, "David".getBytes(StandardCharsets.UTF_8));
@@ -1034,7 +1078,7 @@ public class TestLanceHiveCatalogIT {
 
       root.setRowCount(3);
 
-      // 使用 APPEND 模式写入数据到已有的 Dataset
+      // Write data to existing Dataset in APPEND mode
       Dataset appendedDataset =
           Dataset.write()
               .allocator(allocator)
@@ -1042,15 +1086,15 @@ public class TestLanceHiveCatalogIT {
               .reader(vectorSchemaRootToArrowReader(root, allocator))
               .mode(WriteParams.WriteMode.APPEND)
               .execute();
-      assertNotNull("追加写入后的 Dataset 不应为 null", appendedDataset);
+      assertNotNull("Dataset after append should not be null", appendedDataset);
       appendedDataset.close();
     }
 
-    // 3. 重新打开 Dataset 并读取验证数据
+    // 3. Reopen Dataset and verify by reading data
     Dataset readDataset = Dataset.open(tableLocation, allocator);
-    assertEquals("应有 3 行数据", 3, readDataset.countRows());
+    assertEquals("should have 3 rows of data", 3, readDataset.countRows());
 
-    // 通过 Scanner 读取全部数据
+    // Read all data via Scanner
     LanceScanner scanner = readDataset.newScan();
     try (ArrowReader reader = scanner.scanBatches()) {
       List<Long> ids = new ArrayList<>();
@@ -1070,44 +1114,45 @@ public class TestLanceHiveCatalogIT {
         }
       }
 
-      assertEquals("应读取 3 行 id", 3, ids.size());
-      assertTrue("应包含 id=100", ids.contains(100L));
-      assertTrue("应包含 id=200", ids.contains(200L));
-      assertTrue("应包含 id=300", ids.contains(300L));
+      assertEquals("should read 3 rows of id", 3, ids.size());
+      assertTrue("should contain id=100", ids.contains(100L));
+      assertTrue("should contain id=200", ids.contains(200L));
+      assertTrue("should contain id=300", ids.contains(300L));
 
-      assertTrue("应包含 David", names.contains("David"));
-      assertTrue("应包含 Eve", names.contains("Eve"));
-      assertTrue("应包含 Frank", names.contains("Frank"));
+      assertTrue("should contain David", names.contains("David"));
+      assertTrue("should contain Eve", names.contains("Eve"));
+      assertTrue("should contain Frank", names.contains("Frank"));
 
-      assertTrue("应包含 age=28", ages.contains(28));
-      assertTrue("应包含 age=32", ages.contains(32));
-      assertTrue("应包含 age=40", ages.contains(40));
+      assertTrue("should contain age=28", ages.contains(28));
+      assertTrue("should contain age=32", ages.contains(32));
+      assertTrue("should contain age=40", ages.contains(40));
     }
 
     readDataset.close();
 
-    // 4. 通过 loadTable 加载表并验证 DATA_STORAGE_VERSION 为 2.2
+    // 4. Load the table via loadTable and verify DATA_STORAGE_VERSION is 2.2
     AmoroTable<?> loadedTable = catalog.loadTable(TEST_DB, "v22_table");
-    assertNotNull("加载的表不应为 null", loadedTable);
-    assertEquals("表名应匹配", "v22_table", loadedTable.id().getTableName());
-    assertEquals("数据库名应匹配", TEST_DB, loadedTable.id().getDatabase());
+    assertNotNull("loaded table should not be null", loadedTable);
+    assertEquals("table name should match", "v22_table", loadedTable.id().getTableName());
+    assertEquals("database name should match", TEST_DB, loadedTable.id().getDatabase());
 
-    // 验证 properties 中 lance.data-storage-version 为 2.2
+    // Verify lance.data-storage-version in properties is 2.2
     String dataStorageVersion = loadedTable.properties().get(LanceProperties.DATA_STORAGE_VERSION);
-    assertEquals("DATA_STORAGE_VERSION 应为 2.2", "2.2", dataStorageVersion);
+    assertEquals("DATA_STORAGE_VERSION should be 2.2", "2.2", dataStorageVersion);
   }
 
-  // ==================== 辅助方法 ====================
+  // ==================== Helper Methods ====================
 
   /**
-   * 将 VectorSchemaRoot 转换为 ArrowReader。
+   * Convert a VectorSchemaRoot to an ArrowReader.
    *
-   * <p>通过 Arrow IPC 流式协议，先将 VectorSchemaRoot 序列化到内存字节数组， 再从字节数组反序列化为 ArrowStreamReader。
+   * <p>Serialize the VectorSchemaRoot to an in-memory byte array via the Arrow IPC streaming
+   * protocol, then deserialize it back to an ArrowStreamReader.
    *
-   * @param root 要转换的 VectorSchemaRoot
-   * @param alloc 用于分配内存的 BufferAllocator
-   * @return 包含 root 数据的 ArrowReader
-   * @throws IOException 如果序列化/反序列化过程中发生 IO 错误
+   * @param root the VectorSchemaRoot to convert
+   * @param alloc BufferAllocator for memory allocation
+   * @return ArrowReader containing the root data
+   * @throws IOException if an IO error occurs during serialization/deserialization
    */
   private ArrowReader vectorSchemaRootToArrowReader(VectorSchemaRoot root, BufferAllocator alloc)
       throws IOException {

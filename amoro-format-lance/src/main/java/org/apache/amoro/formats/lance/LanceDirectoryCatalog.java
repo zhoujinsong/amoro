@@ -21,12 +21,14 @@ package org.apache.amoro.formats.lance;
 import org.apache.amoro.AmoroTable;
 import org.apache.amoro.FormatCatalog;
 import org.apache.amoro.NoSuchDatabaseException;
+import org.apache.amoro.NoSuchTableException;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.table.TableIdentifier;
 import org.apache.arrow.memory.BufferAllocator;
 import org.lance.Dataset;
 import org.lance.ReadOptions;
 import org.lance.namespace.LanceNamespace;
+import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.model.DescribeTableRequest;
 import org.lance.namespace.model.DescribeTableResponse;
 import org.lance.namespace.model.DropTableRequest;
@@ -84,8 +86,8 @@ public class LanceDirectoryCatalog implements FormatCatalog {
     }
 
     try {
+      // Directory namespace returns all tables in a single call (no pagination needed).
       ListTablesRequest request = new ListTablesRequest();
-      // For directory namespace, use empty list to represent root namespace
       request.setId(Collections.emptyList());
       ListTablesResponse response = directoryNamespace.listTables(request);
       return new ArrayList<>(response.getTables());
@@ -205,38 +207,38 @@ public class LanceDirectoryCatalog implements FormatCatalog {
           "Directory namespace only supports 'default' database, requested: " + database);
     }
 
+    // Use namespace to describe table and get location
+    DescribeTableRequest request = new DescribeTableRequest();
+    // For directory namespace, table ID is just the table name
+    request.setId(Collections.singletonList(table));
+    DescribeTableResponse response;
     try {
-      // Use namespace to describe table and get location
-      DescribeTableRequest request = new DescribeTableRequest();
-      // For directory namespace, table ID is just the table name
-      request.setId(Collections.singletonList(table));
-      DescribeTableResponse response = directoryNamespace.describeTable(request);
-
-      String location = response.getLocation();
-      if (location == null || location.isEmpty()) {
-        throw new IllegalArgumentException(
-            "Failed to get table location for " + database + "." + table);
-      }
-
-      // 提取存储配置并打开 Lance 数据集
-      Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(properties);
-      ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
-      optionsBuilder.setStorageOptions(storageOptions);
-
-      Dataset dataset = Dataset.open(location, optionsBuilder.build());
-
-      // 合并三个 metadata 源到统一的 tableProperties
-      Map<String, String> mergedProperties = LanceProperties.mergeDatasetMetadata(dataset);
-
-      // Create TableIdentifier with "default" as catalog for directory namespace
-      TableIdentifier tableIdentifier = TableIdentifier.of("default", database, table);
-
-      // Create and return LanceTable
-      return new LanceTable(tableIdentifier, dataset, mergedProperties);
-    } catch (Exception e) {
-      LOG.error("Failed to load table: {}.{}", database, table, e);
-      throw new RuntimeException("Failed to load table: " + database + "." + table, e);
+      response = directoryNamespace.describeTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
     }
+
+    String location = response.getLocation();
+    if (location == null || location.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Failed to get table location for " + database + "." + table);
+    }
+
+    // Extract storage options and open the Lance dataset
+    Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(properties);
+    ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
+    optionsBuilder.setStorageOptions(storageOptions);
+
+    Dataset dataset = Dataset.open(location, optionsBuilder.build());
+
+    // Merge the three metadata sources into unified tableProperties
+    Map<String, String> mergedProperties = LanceProperties.mergeDatasetMetadata(dataset);
+
+    // Create TableIdentifier with "default" as catalog for directory namespace
+    TableIdentifier tableIdentifier = TableIdentifier.of("default", database, table);
+
+    // Create and return LanceTable
+    return new LanceTable(tableIdentifier, dataset, mergedProperties);
   }
 
   /**
@@ -258,12 +260,14 @@ public class LanceDirectoryCatalog implements FormatCatalog {
       return false;
     }
 
+    DropTableRequest request = new DropTableRequest();
+    // For directory namespace, table ID is just the table name
+    request.setId(Collections.singletonList(table));
     try {
-      DropTableRequest request = new DropTableRequest();
-      // For directory namespace, table ID is just the table name
-      request.setId(Collections.singletonList(table));
       directoryNamespace.dropTable(request);
       return true;
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
     } catch (Exception e) {
       LOG.error("Failed to drop table: {}.{}", database, table, e);
       return false;

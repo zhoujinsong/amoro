@@ -30,6 +30,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.lance.Dataset;
 import org.lance.ReadOptions;
 import org.lance.namespace.LanceNamespace;
+import org.lance.namespace.errors.NamespaceAlreadyExistsException;
 import org.lance.namespace.errors.NamespaceNotFoundException;
 import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.model.CreateNamespaceRequest;
@@ -43,6 +44,7 @@ import org.lance.namespace.model.ListNamespacesRequest;
 import org.lance.namespace.model.ListNamespacesResponse;
 import org.lance.namespace.model.ListTablesRequest;
 import org.lance.namespace.model.ListTablesResponse;
+import org.lance.namespace.model.NamespaceExistsRequest;
 import org.lance.namespace.model.TableExistsRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +52,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -125,24 +128,47 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public List<String> listDatabases() {
-    ListNamespacesRequest request = new ListNamespacesRequest();
-    request.setId(catalogId());
-    ListNamespacesResponse response = restNamespace.listNamespaces(request);
-    return new ArrayList<>(response.getNamespaces());
+    Set<String> allDatabases = new LinkedHashSet<>();
+    String pageToken = null;
+    do {
+      ListNamespacesRequest request = new ListNamespacesRequest();
+      request.setId(catalogId());
+      request.setPageToken(pageToken);
+      request.setLimit(LanceProperties.DEFAULT_PAGE_SIZE);
+      ListNamespacesResponse response = restNamespace.listNamespaces(request);
+      allDatabases.addAll(response.getNamespaces());
+      pageToken = response.getPageToken();
+    } while (pageToken != null && !pageToken.isEmpty());
+    return new ArrayList<>(allDatabases);
   }
 
   @Override
   public boolean databaseExists(String database) {
-    return listDatabases().contains(database);
+    NamespaceExistsRequest request = new NamespaceExistsRequest();
+    request.setId(databaseId(database));
+    try {
+      restNamespace.namespaceExists(request);
+      return true;
+    } catch (NamespaceNotFoundException e) {
+      return false;
+    }
   }
 
   @Override
   public List<String> listTables(String database) {
-    ListTablesRequest request = new ListTablesRequest();
-    request.setId(databaseId(database));
+    Set<String> allTables = new LinkedHashSet<>();
+    String pageToken = null;
     try {
-      ListTablesResponse response = restNamespace.listTables(request);
-      return new ArrayList<>(response.getTables());
+      do {
+        ListTablesRequest request = new ListTablesRequest();
+        request.setId(databaseId(database));
+        request.setPageToken(pageToken);
+        request.setLimit(LanceProperties.DEFAULT_PAGE_SIZE);
+        ListTablesResponse response = restNamespace.listTables(request);
+        allTables.addAll(response.getTables());
+        pageToken = response.getPageToken();
+      } while (pageToken != null && !pageToken.isEmpty());
+      return new ArrayList<>(allTables);
     } catch (NamespaceNotFoundException e) {
       throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
@@ -162,23 +188,25 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public void createDatabase(String database) {
-    if (databaseExists(database)) {
-      throw new AlreadyExistsException("Database already exists: " + database);
-    }
     CreateNamespaceRequest request = new CreateNamespaceRequest();
     request.setId(databaseId(database));
-    restNamespace.createNamespace(request);
+    try {
+      restNamespace.createNamespace(request);
+    } catch (NamespaceAlreadyExistsException e) {
+      throw new AlreadyExistsException("Database already exists: " + database);
+    }
   }
 
   @Override
   public void createDatabase(String database, Map<String, String> metadata) {
-    if (databaseExists(database)) {
-      throw new AlreadyExistsException("Database already exists: " + database);
-    }
     CreateNamespaceRequest request = new CreateNamespaceRequest();
     request.setId(databaseId(database));
     request.setProperties(metadata);
-    restNamespace.createNamespace(request);
+    try {
+      restNamespace.createNamespace(request);
+    } catch (NamespaceAlreadyExistsException e) {
+      throw new AlreadyExistsException("Database already exists: " + database);
+    }
   }
 
   @Override
@@ -195,15 +223,16 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public void dropDatabase(String database) {
-    if (!databaseExists(database)) {
-      throw new NoSuchDatabaseException("Database does not exist: " + database);
-    }
     if (!listTables(database).isEmpty()) {
       throw new DatabaseNotEmptyException("Cannot drop non-empty database: " + database);
     }
     DropNamespaceRequest request = new DropNamespaceRequest();
     request.setId(databaseId(database));
-    restNamespace.dropNamespace(request);
+    try {
+      restNamespace.dropNamespace(request);
+    } catch (NamespaceNotFoundException e) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
+    }
   }
 
   @Override
@@ -220,6 +249,10 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public AmoroTable<?> loadTable(String database, String table) {
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
+    }
+
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(tableId(database, table));
     DescribeTableResponse response;
@@ -235,10 +268,10 @@ public class LanceRestCatalog implements FormatCatalog {
           "Failed to get table location for " + database + "." + table);
     }
 
-    // 将 namespace 返回的 location 统一转换为 Lance SDK 使用的 cos:// 协议
+    // Convert namespace-returned location to the cos:// scheme used by the Lance SDK
     String lanceLocation = LanceProperties.toCosScheme(location);
 
-    // 提取 catalog 级存储配置并打开 Lance 数据集
+    // Extract catalog-level storage options and open the Lance dataset
     Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(properties);
     ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
     optionsBuilder.setStorageOptions(storageOptions);
@@ -262,7 +295,7 @@ public class LanceRestCatalog implements FormatCatalog {
       throw e;
     }
 
-    // 合并 dataset 的三个 metadata 源到统一的 tableProperties
+    // Merge the three dataset metadata sources into unified tableProperties
     Map<String, String> mergedProperties = LanceProperties.mergeDatasetMetadata(dataset);
 
     TableIdentifier tableIdentifier = TableIdentifier.of(catalogName, database, table);
@@ -271,6 +304,10 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public boolean dropTable(String database, String table, boolean purge) {
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
+    }
+
     DropTableRequest request = new DropTableRequest();
     request.setId(tableId(database, table));
     try {
