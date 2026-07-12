@@ -228,8 +228,7 @@ public class TestGravitinoUnifiedCatalog {
   public void testLoadTableRoutesToIcebergEngine() {
     stubTable("db1", "t1", "iceberg");
     Map<String, String> extra = Maps.newHashMap();
-    extra.put(
-        GravitinoUnifiedCatalogProperties.ICEBERG_REST_SERVER_URL, "http://host:9001/iceberg/");
+    extra.put(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI, "http://host:9001/iceberg/");
     GravitinoUnifiedCatalog catalog = newCatalog(extra);
 
     AmoroTable<?> table = catalog.loadTable("db1", "t1");
@@ -241,7 +240,7 @@ public class TestGravitinoUnifiedCatalog {
   public void testLoadTableRoutesToLanceEngine() {
     stubTable("db1", "t1", "lance");
     Map<String, String> extra = Maps.newHashMap();
-    extra.put(GravitinoUnifiedCatalogProperties.LANCE_REST_SERVER_URL, "http://host:9002/lance/");
+    extra.put(GravitinoUnifiedCatalogProperties.LANCE_REST_URI, "http://host:9002/lance/");
     GravitinoUnifiedCatalog catalog = newCatalog(extra);
 
     AmoroTable<?> table = catalog.loadTable("db1", "t1");
@@ -252,8 +251,8 @@ public class TestGravitinoUnifiedCatalog {
   @Test
   public void testLanceRestUriAutoDerivedFromGravitinoUri() {
     stubTable("db1", "t1", "lance");
-    // Neither lance_rest_server_url nor a remote catalog property is configured: the Lance engine
-    // is still built by deriving the endpoint from gravitino.uri (same host, port 9002, /lance).
+    // Neither an explicit lance-rest-uri nor a remote catalog property is configured: the Lance
+    // engine is still built by deriving the endpoint from gravitino.uri (same host, 9002, /lance).
     GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
 
     AmoroTable<?> table = catalog.loadTable("db1", "t1");
@@ -267,7 +266,7 @@ public class TestGravitinoUnifiedCatalog {
   @Test
   public void testLoadTableThrowsWhenEndpointUnresolvable() {
     stubTable("db1", "t1", "lance");
-    // No lance_rest_server_url, no remote catalog property, and gravitino.uri has no host, so the
+    // No lance-rest-uri, no remote catalog property, and gravitino.uri has no host, so the
     // endpoint cannot be resolved and no data-plane engine gets built for LANCE.
     Map<String, String> extra = Maps.newHashMap();
     extra.put(GravitinoUnifiedCatalogProperties.GRAVITINO_URI, "invalid-uri-without-host");
@@ -280,8 +279,7 @@ public class TestGravitinoUnifiedCatalog {
   public void testDropTableRoutesByFormat() {
     stubTable("db1", "t1", "iceberg");
     Map<String, String> extra = Maps.newHashMap();
-    extra.put(
-        GravitinoUnifiedCatalogProperties.ICEBERG_REST_SERVER_URL, "http://host:9001/iceberg/");
+    extra.put(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI, "http://host:9001/iceberg/");
     GravitinoUnifiedCatalog catalog = newCatalog(extra);
 
     assertTrue(catalog.dropTable("db1", "t1", false));
@@ -303,9 +301,9 @@ public class TestGravitinoUnifiedCatalog {
     stubTable("db1", "t1", "iceberg");
     GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
 
-    // No explicit iceberg_rest_server_url configured: the engine still gets built because the
-    // Gravitino loadCatalog() response carried it. Trailing '/' is stripped to prevent
-    // double-slash in REST URL joins.
+    // No explicit iceberg-rest-uri configured on the Amoro side: the engine still gets built
+    // because the Gravitino loadCatalog() response carried it under the same key. Trailing '/' is
+    // stripped to prevent double-slash in REST URL joins.
     AmoroTable<?> table = catalog.loadTable("db1", "t1");
     assertEquals(TableFormat.ICEBERG, table.format());
     assertEquals(
@@ -315,10 +313,12 @@ public class TestGravitinoUnifiedCatalog {
 
   @Test
   public void testExplicitIcebergRestUriOverridesRemote() {
-    remoteCatalogProperties.put("iceberg-rest-uri", "http://remote:9001/iceberg/");
+    // Both the Amoro side and the Gravitino remote advertise the same unified key
+    // 'iceberg-rest-uri'; the Amoro-side value must win.
+    remoteCatalogProperties.put(
+        GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI, "http://remote:9001/iceberg/");
     Map<String, String> extra = Maps.newHashMap();
-    extra.put(
-        GravitinoUnifiedCatalogProperties.ICEBERG_REST_SERVER_URL, "http://explicit:9001/iceberg/");
+    extra.put(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI, "http://explicit:9001/iceberg/");
     newCatalog(extra);
 
     assertEquals(
@@ -371,6 +371,48 @@ public class TestGravitinoUnifiedCatalog {
 
     assertEquals("Basic xxx", derived.get().get("header.Authorization"));
     assertEquals("vpc-123", derived.get().get("header.X-VPC-ID"));
+  }
+
+  @Test
+  public void testDeriveDataPlanePropertiesInjectsAmoroBusinessProperties() {
+    Map<String, String> extra = Maps.newHashMap();
+    extra.put("io-impl", "org.apache.iceberg.hadoop.HadoopFileIO");
+    extra.put("metrics-reporter-impl", "com.tencent.cloud.tclake.TCLakeMetricsReporter");
+    extra.put("table.self-optimizing.enabled", "true");
+    extra.put("table.self-optimizing.group", "251409075-default-group");
+    extra.put("table.snapshot.keep.duration", "7d");
+    GravitinoUnifiedCatalog catalog = newCatalog(extra);
+
+    Optional<Map<String, String>> derived =
+        catalog.deriveDataPlaneProperties(TableFormat.ICEBERG, "http://host:9001/iceberg", null);
+
+    assertTrue(derived.isPresent());
+    Map<String, String> props = derived.get();
+    // All Amoro business properties are injected into the data-plane FormatCatalog.
+    assertEquals("org.apache.iceberg.hadoop.HadoopFileIO", props.get("io-impl"));
+    assertEquals(
+        "com.tencent.cloud.tclake.TCLakeMetricsReporter", props.get("metrics-reporter-impl"));
+    assertEquals("true", props.get("table.self-optimizing.enabled"));
+    assertEquals("251409075-default-group", props.get("table.self-optimizing.group"));
+    assertEquals("7d", props.get("table.snapshot.keep.duration"));
+  }
+
+  @Test
+  public void testDeriveDataPlanePropertiesOverridesControlPlaneKeys() {
+    // The Amoro catalog carries `uri` = Gravitino server address (control-plane semantics). The
+    // derived Iceberg data-plane props must use the resolved REST endpoint, not the Gravitino URI,
+    // and must strip control-plane-only keys.
+    Map<String, String> extra = Maps.newHashMap();
+    extra.put(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI, "http://host:9001/iceberg");
+    GravitinoUnifiedCatalog catalog = newCatalog(extra);
+
+    Optional<Map<String, String>> derived =
+        catalog.deriveDataPlaneProperties(TableFormat.ICEBERG, "http://host:9001/iceberg", null);
+
+    assertTrue(derived.isPresent());
+    Map<String, String> props = derived.get();
+    // `uri` is authoritatively the Iceberg REST endpoint, not the Gravitino server URI.
+    assertEquals("http://host:9001/iceberg", props.get("uri"));
   }
 
   @Test

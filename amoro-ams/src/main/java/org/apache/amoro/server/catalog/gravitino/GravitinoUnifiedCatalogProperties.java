@@ -39,17 +39,9 @@ public class GravitinoUnifiedCatalogProperties {
   /** The target catalog, expressed as {@code <metalake>.<catalog>} */
   public static final String WAREHOUSE = "warehouse";
 
-  /** Optional explicit override of the Iceberg-REST endpoint. Not required. */
-  public static final String ICEBERG_REST_SERVER_URL = "iceberg_rest_server_url";
+  public static final String ICEBERG_REST_URI = "iceberg-rest-uri";
 
-  /** Optional explicit override of the Lance-REST endpoint. Not required. */
-  public static final String LANCE_REST_SERVER_URL = "lance_rest_server_url";
-
-  /** Property key returned by Gravitino's {@code loadCatalog} carrying the Iceberg REST URI. */
-  public static final String REMOTE_PROPERTY_ICEBERG_REST_URI = "iceberg-rest-uri";
-
-  /** Property key returned by Gravitino's {@code loadCatalog} carrying the Lance REST URI. */
-  public static final String REMOTE_PROPERTY_LANCE_REST_URI = "lance-rest-uri";
+  public static final String LANCE_REST_URI = "lance-rest-uri";
 
   public static final String HEADER_PROPERTY_PREFIX = "header.";
 

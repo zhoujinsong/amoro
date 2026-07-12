@@ -200,7 +200,7 @@ const defaultPropertiesMap = {
   custom: ['catalog-impl'],
   glue: ['warehouse', 'lock-impl', 'lock.table'],
   PAIMON: ['warehouse'],
-  gravitino: ['uri', 'warehouse', 'iceberg_rest_server_url', 'lance_rest_server_url', 'header.Authorization', 'header.X-VPC-ID'],
+  gravitino: ['uri', 'warehouse', 'iceberg-rest-uri', 'lance-rest-uri', 'header.Authorization', 'header.X-VPC-ID'],
 }
 
 watch(() => route.query, (value) => {

@@ -19,10 +19,8 @@
 package org.apache.amoro.server.catalog.gravitino;
 
 import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.GRAVITINO_URI;
-import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.ICEBERG_REST_SERVER_URL;
-import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.LANCE_REST_SERVER_URL;
-import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.REMOTE_PROPERTY_ICEBERG_REST_URI;
-import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.REMOTE_PROPERTY_LANCE_REST_URI;
+import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI;
+import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.LANCE_REST_URI;
 import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.WAREHOUSE;
 
 import org.apache.amoro.AmoroTable;
@@ -140,10 +138,10 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
 
   private void init() {
     this.warehouse = requireProperty(catalogProperties, WAREHOUSE);
+    String uri = requireProperty(catalogProperties, GRAVITINO_URI);
     Pair<String, String> mc = GravitinoUnifiedCatalogProperties.splitWarehouse(warehouse);
     this.metalake = mc.first();
     this.gravitinoCatalogName = mc.second();
-    String uri = requireProperty(catalogProperties, GRAVITINO_URI);
     this.client = buildClient(uri, metalake, catalogProperties);
     this.allowedFormats =
         CatalogUtil.tableFormats(CatalogMetaProperties.CATALOG_TYPE_GRAVITINO, catalogProperties);
@@ -176,8 +174,8 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     } catch (RuntimeException e) {
       LOG.warn(
           "Failed to load Gravitino catalog properties for {}.{}, iceberg/lance rest url "
-              + "auto-derivation will be skipped; explicit iceberg_rest_server_url / "
-              + "lance_rest_server_url must be configured.",
+              + "auto-derivation will be skipped; explicit iceberg-rest-uri / "
+              + "lance-rest-uri must be configured.",
           metalake,
           gravitinoCatalogName,
           e);
@@ -187,15 +185,13 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     String icebergRestUri =
         resolveRestUri(
             "iceberg",
-            ICEBERG_REST_SERVER_URL,
-            REMOTE_PROPERTY_ICEBERG_REST_URI,
+            ICEBERG_REST_URI,
             remoteCatalogProps,
             GravitinoUnifiedCatalogProperties::deriveIcebergRestUri);
     String lanceRestUri =
         resolveRestUri(
             "lance",
-            LANCE_REST_SERVER_URL,
-            REMOTE_PROPERTY_LANCE_REST_URI,
+            LANCE_REST_URI,
             remoteCatalogProps,
             GravitinoUnifiedCatalogProperties::deriveLanceRestUri);
     LOG.info(
@@ -226,9 +222,9 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
       if (derivedProperties.isEmpty()) {
         LOG.warn(
             "Skip initializing data-plane engine for format {} in Gravitino catalog {}.{}: "
-                + "no REST endpoint resolved. iceberg_rest_server_url=[{}], "
-                + "lance_rest_server_url=[{}]. Configure iceberg_rest_server_url / "
-                + "lance_rest_server_url explicitly, or ensure the Gravitino catalog advertises "
+                + "no REST endpoint resolved. iceberg-rest-uri=[{}], "
+                + "lance-rest-uri=[{}]. Configure iceberg-rest-uri / "
+                + "lance-rest-uri explicitly, or ensure the Gravitino catalog advertises "
                 + "them, or set gravitino.uri so it can be derived "
                 + "(host:9001/iceberg, host:9002/lance).",
             format,
@@ -266,34 +262,27 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
   @VisibleForTesting
   Optional<Map<String, String>> deriveDataPlaneProperties(
       TableFormat format, String icebergRestUri, String lanceRestUri) {
-    Map<String, String> headerProps = Maps.newHashMap();
-    GravitinoUnifiedCatalogProperties.extractHeaders(catalogProperties)
-        .forEach(
-            (name, value) ->
-                headerProps.put(
-                    GravitinoUnifiedCatalogProperties.HEADER_PROPERTY_PREFIX + name, value));
+    Map<String, String> props = Maps.newHashMap(catalogProperties);
+    props.remove(GRAVITINO_URI);
 
     if (format.in(TableFormat.ICEBERG, TableFormat.MIXED_ICEBERG)) {
       if (StringUtils.isBlank(icebergRestUri)) {
         return Optional.empty();
       }
-      Map<String, String> icebergProps = Maps.newHashMap(headerProps);
-      icebergProps.put("uri", stripTrailingSlash(icebergRestUri));
-      icebergProps.put("catalog-impl", "org.apache.iceberg.rest.RESTCatalog");
+      props.put("uri", stripTrailingSlash(icebergRestUri));
+      props.putIfAbsent("catalog-impl", "org.apache.iceberg.rest.RESTCatalog");
       // Iceberg gets the warehouse verbatim ("<metalake>.<catalog>").
-      icebergProps.put("warehouse", warehouse);
-      return Optional.of(icebergProps);
+      props.putIfAbsent("warehouse", warehouse);
+      return Optional.of(props);
     } else if (format.equals(TableFormat.LANCE)) {
       if (StringUtils.isBlank(lanceRestUri)) {
         return Optional.empty();
       }
-      Map<String, String> lanceProps = Maps.newHashMap(headerProps);
-      lanceProps.put("lance.uri", lanceRestUri);
-      // Lance's own factory (LanceCatalogFactory#buildLanceRestProperties) splits the warehouse
-      // ("<metalake>.<catalog>") into the X-Gravitino-Metalake header + the REST catalog name, so
-      // we just hand it the raw warehouse here.
-      lanceProps.put("warehouse", warehouse);
-      return Optional.of(lanceProps);
+      // Lance's factory reads `lance.uri` first (explicit override) and splits the raw warehouse
+      // ("<metalake>.<catalog>") into the X-Gravitino-Metalake header + REST catalog name.
+      props.put("lance.uri", lanceRestUri);
+      props.putIfAbsent("warehouse", warehouse);
+      return Optional.of(props);
     } else {
       return Optional.empty();
     }
@@ -456,8 +445,8 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
               + metalake
               + "."
               + gravitinoCatalogName
-              + ". Check `table-formats`, or iceberg_rest_server_url / "
-              + "lance_rest_server_url.");
+              + ". Check `table-formats`, or iceberg-rest-uri / "
+              + "lance-rest-uri.");
     }
     return engine.loadTable(database, table);
   }
@@ -567,22 +556,13 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     return StringUtils.isNotBlank(a) ? a : b;
   }
 
-  /**
-   * Resolves a format's REST endpoint with a uniform precedence, shared by iceberg and lance:
-   * explicit catalog property ({@code <format>_rest_server_url}) &gt; the URI advertised by the
-   * Gravitino catalog itself ({@code <format>-rest-uri}) &gt; a fallback derived from {@code
-   * gravitino.uri} (same host, format-specific default port/path, e.g. {@code host:9001/iceberg} /
-   * {@code host:9002/lance}). Returns blank if none can be resolved.
-   */
   private String resolveRestUri(
       String formatLabel,
-      String explicitPropertyKey,
-      String remotePropertyKey,
+      String restUriKey,
       Map<String, String> remoteCatalogProps,
       Function<String, String> deriveFromGravitinoUri) {
     String uri =
-        firstNonBlank(
-            catalogProperties.get(explicitPropertyKey), remoteCatalogProps.get(remotePropertyKey));
+        firstNonBlank(catalogProperties.get(restUriKey), remoteCatalogProps.get(restUriKey));
     // Fallback: derive from gravitino.uri when neither explicit config nor the remote catalog
     // property provided the endpoint.
     if (StringUtils.isBlank(uri)) {

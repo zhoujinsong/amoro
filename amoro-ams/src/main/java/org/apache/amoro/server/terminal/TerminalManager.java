@@ -410,7 +410,7 @@ public class TerminalManager {
 
     if (CatalogMetaProperties.CATALOG_TYPE_GRAVITINO.equalsIgnoreCase(catalogType)) {
       Map<String, String> props = catalogMeta.getCatalogProperties();
-      String icebergRestUri = props.get(GravitinoUnifiedCatalogProperties.ICEBERG_REST_SERVER_URL);
+      String icebergRestUri = props.get(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI);
       // Fallback: derive from gravitino.uri (same host, port 9001, path /iceberg).
       if (StringUtils.isBlank(icebergRestUri)) {
         icebergRestUri =
@@ -427,7 +427,7 @@ public class TerminalManager {
         throw new IllegalStateException(
             "Terminal cannot resolve an Iceberg REST endpoint for gravitino catalog. "
                 + "Please configure '"
-                + GravitinoUnifiedCatalogProperties.ICEBERG_REST_SERVER_URL
+                + GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI
                 + "' or ensure '"
                 + GravitinoUnifiedCatalogProperties.GRAVITINO_URI
                 + "' is set so it can be derived.");
