@@ -273,6 +273,10 @@ public class LanceRestCatalog implements FormatCatalog {
 
     // Extract catalog-level storage options and open the Lance dataset
     Map<String, String> storageOptions = LanceProperties.extractCatalogStorageOptions(properties);
+    // Merge the storage options from table rest server
+    if (response.getStorageOptions() != null) {
+      storageOptions.putAll(response.getStorageOptions());
+    }
     ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
     optionsBuilder.setStorageOptions(storageOptions);
     Dataset dataset;
