@@ -103,6 +103,8 @@ public class LanceHiveCatalog implements FormatCatalog {
   /** TCLake appid key; read from hadoopConf by LanceCOSCredentialsProvider. */
   private static final String TCLAKE_CRED_USER_APPID_KEY = "tclake.cos.credentials.user.appid";
 
+  private static final String SELF_OPTIMIZING_GROUP_KEY = "table.self-optimizing.group";
+
   private final String catalogName;
   private final LanceNamespace hive3Namespace;
   private final Map<String, String> properties;
@@ -153,7 +155,7 @@ public class LanceHiveCatalog implements FormatCatalog {
       Map<String, String> properties,
       BufferAllocator allocator,
       Configuration hadoopConf) {
-    this.catalogName = catalogName;
+    this.catalogName = resolveHmsCatalogName(catalogName, properties);
     this.hive3Namespace = hive3Namespace;
     this.properties = properties;
     this.allocator = allocator;
@@ -273,6 +275,32 @@ public class LanceHiveCatalog implements FormatCatalog {
       return "hive";
     }
     return catalogName;
+  }
+
+  static String resolveHmsCatalogName(String catalogName, Map<String, String> properties) {
+    if (StringUtils.isBlank(catalogName) || properties == null) {
+      return catalogName;
+    }
+    String group = properties.get(SELF_OPTIMIZING_GROUP_KEY);
+    if (StringUtils.isBlank(group)) {
+      return catalogName;
+    }
+    int idx = group.indexOf('-');
+    String appid = idx > 0 ? group.substring(0, idx) : null;
+    if (StringUtils.isBlank(appid)) {
+      return catalogName;
+    }
+    String prefix = appid + "_";
+    if (!catalogName.startsWith(prefix)) {
+      return catalogName;
+    }
+    String stripped = catalogName.substring(prefix.length());
+    LOG.info(
+        "Stripped appid prefix '{}' from Amoro catalog '{}', HMS catalog name resolved to '{}'",
+        prefix,
+        catalogName,
+        stripped);
+    return stripped;
   }
 
   /**
