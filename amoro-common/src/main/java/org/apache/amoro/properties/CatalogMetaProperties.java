@@ -62,6 +62,7 @@ public class CatalogMetaProperties {
   public static final String CATALOG_TYPE_HIVE = "hive";
   public static final String CATALOG_TYPE_AMS = "ams";
   public static final String CATALOG_TYPE_GLUE = "glue";
+  public static final String CATALOG_TYPE_REST = "rest";
   public static final String CATALOG_TYPE_CUSTOM = "custom";
 
   public static final String TABLE_FORMATS = "table-formats";
@@ -74,7 +75,6 @@ public class CatalogMetaProperties {
   public static final long CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS_DEFAULT =
       TimeUnit.MINUTES.toMillis(5);
 
-  // only used for unified catalog
   public static final String AMS_URI = "ams.uri";
 
   // only used for engine properties

@@ -78,7 +78,16 @@ function startAMS() {
 
 configure_jvm_options
 
-if [ -n "$HIVE_META_URL" ] && [ -n "$HIVE_META_USER" ] && [ -n "$HIVE_META_PASSWORD" ]; then
+if [ "$MULTI_TENANT_MODE" = "true" ]; then
+  echo "Multi-tenant mode enabled, skipping MySQL initialization"
+  if [ "${DEVNET:-}" = "true" ]; then
+    echo "Devnet mode enabled, skipping rainbow config fetch"
+  else
+    echo "get rainbow config"
+      wget -O /data1/rainbow-config.jar https://mirrors.tencent.com/repository/maven/tclake-snapshot/org/example/rainbow-config/1.0-SNAPSHOT/rainbow-config-1.0-20260605.072959-4.jar
+      java -jar /data1/rainbow-config.jar -m event-listeners.yaml:/usr/local/service/amoro/conf/plugins,metric-reporters.yaml:/usr/local/service/amoro/conf/plugins
+  fi
+elif [ -n "$HIVE_META_URL" ] && [ -n "$HIVE_META_USER" ] && [ -n "$HIVE_META_PASSWORD" ]; then
   init_mysql
 fi
 

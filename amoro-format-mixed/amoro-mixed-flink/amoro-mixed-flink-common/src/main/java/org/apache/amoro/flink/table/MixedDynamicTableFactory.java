@@ -101,10 +101,10 @@ public class MixedDynamicTableFactory
       Preconditions.checkNotNull(
           actualCatalogName,
           String.format("%s should be set", MixedFormatValidator.MIXED_FORMAT_CATALOG.key()));
-      String metastoreUrl = options.get(CatalogFactoryOptions.AMS_URI);
+      String amsUri = options.get(CatalogFactoryOptions.AMS_URI);
       actualBuilder =
           InternalCatalogBuilder.builder()
-              .metastoreUrl(metastoreUrl)
+              .amsUri(amsUri)
               .catalogName(actualCatalogName)
               .properties(options.toMap());
     }
