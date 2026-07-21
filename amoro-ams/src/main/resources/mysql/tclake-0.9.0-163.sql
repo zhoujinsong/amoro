@@ -18,34 +18,37 @@
 --   1. "uri" is rewritten from the Iceberg REST endpoint (e.g.
 --      "http://<clb_ip>:9001/iceberg") to the Gravitino server endpoint
 --      "http://<clb_ip>:8090". The CLB IP is extracted from the existing
---      uri into a temp variable first, then used in the UPDATE.
+--      uri via a CTE, then used in the UPDATE.
 --   2. "table-formats" is set to "ICEBERG,MIXED_ICEBERG,LANCE"
 -- All other keys in catalog_properties remain unchanged.
+--
+-- Uses a WITH (CTE) intermediate table instead of SELECT ... INTO @var,
+-- because INTO @var is not supported in some MySQL execution contexts
+-- (e.g. JDBC batch, certain drivers, or non-stored-procedure scripts).
 
--- Step 1: Extract CLB IP from existing uri into temp variable
-SELECT SUBSTRING_INDEX(
-           SUBSTRING_INDEX(
+WITH clb_ip_cte AS (
+    SELECT SUBSTRING_INDEX(
                SUBSTRING_INDEX(
-                   JSON_UNQUOTE(JSON_EXTRACT(`catalog_properties`, '$."uri"')),
-                   '://', -1
+                   SUBSTRING_INDEX(
+                       JSON_UNQUOTE(JSON_EXTRACT(`catalog_properties`, '$."uri"')),
+                       '://', -1
+                   ),
+                   '/', 1
                ),
-               '/', 1
-           ),
-           ':', 1
-       )
-INTO @clb_ip
-FROM `catalog_metadata`
-WHERE `catalog_metastore` = 'custom'
-LIMIT 1;
-
--- Step 2: Update catalog_metastore and catalog_properties
-UPDATE `catalog_metadata`
-SET `catalog_metastore`  = 'gravitino',
-    `catalog_properties` = JSON_SET(
+               ':', 1
+           ) AS clb_ip
+    FROM `catalog_metadata`
+    WHERE `catalog_metastore` = 'custom'
+    LIMIT 1
+)
+UPDATE `catalog_metadata` cm
+CROSS JOIN clb_ip_cte c
+SET cm.`catalog_metastore`  = 'gravitino',
+    cm.`catalog_properties` = JSON_SET(
         JSON_SET(
-            `catalog_properties`,
-            '$."uri"', CONCAT('http://', @clb_ip, ':8090')
+            cm.`catalog_properties`,
+            '$."uri"', CONCAT('http://', c.clb_ip, ':8090')
         ),
         '$."table-formats"', 'ICEBERG,MIXED_ICEBERG,LANCE'
     )
-WHERE `catalog_metastore` = 'custom';
+WHERE cm.`catalog_metastore` = 'custom';
