@@ -78,6 +78,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
           TableFormat.MIXED_HIVE, "org.apache.amoro.spark.MixedFormatSparkCatalog",
           TableFormat.MIXED_ICEBERG, "org.apache.amoro.spark.MixedFormatSparkCatalog",
           TableFormat.PAIMON, "org.apache.paimon.spark.SparkCatalog");
+
   private static final String[] DEFAULT_NAMESPACE = new String[] {"default"};
 
   private UnifiedCatalog unifiedCatalog;
@@ -266,6 +267,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       Map<String, String> tableProperties, TableFormat preferredFormat) {
     return (CatalogUtil.isMixedTableFormat(tableProperties)
             && preferredFormat != TableFormat.MIXED_ICEBERG)
+        || (CatalogUtil.isTciTableFormat(tableProperties) && preferredFormat != TableFormat.TCI)
         || (CatalogUtil.isIcebergTableFormat(tableProperties)
             && preferredFormat != TableFormat.ICEBERG)
         || (CatalogUtil.isHoodieTableFormat(tableProperties)

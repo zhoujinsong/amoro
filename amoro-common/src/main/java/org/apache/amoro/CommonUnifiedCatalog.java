@@ -139,6 +139,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
   public AmoroTable<?> loadTable(String database, String table) {
     return formatCatalogAsOrder(
             TableFormat.MIXED_ICEBERG,
+            TableFormat.TCI,
             TableFormat.ICEBERG,
             TableFormat.PAIMON,
             TableFormat.HUDI,
@@ -170,6 +171,7 @@ public class CommonUnifiedCatalog implements UnifiedCatalog {
     TableFormat[] formats =
         new TableFormat[] {
           TableFormat.MIXED_ICEBERG,
+          TableFormat.TCI,
           TableFormat.ICEBERG,
           TableFormat.PAIMON,
           TableFormat.HUDI,

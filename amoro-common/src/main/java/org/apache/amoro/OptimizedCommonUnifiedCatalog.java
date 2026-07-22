@@ -99,6 +99,8 @@ public class OptimizedCommonUnifiedCatalog extends CommonUnifiedCatalog {
     // TODO: support more table formats
     if (CatalogUtil.isMixedTableFormat(amoroTable.properties())) {
       return TableFormat.MIXED_ICEBERG;
+    } else if (CatalogUtil.isTciTableFormat(amoroTable.properties())) {
+      return TableFormat.TCI;
     } else if (CatalogUtil.isIcebergTableFormat(amoroTable.properties())) {
       return TableFormat.ICEBERG;
     } else if (CatalogUtil.isHoodieTableFormat(amoroTable.properties())) {
