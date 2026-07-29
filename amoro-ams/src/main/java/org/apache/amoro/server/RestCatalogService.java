@@ -269,8 +269,8 @@ public class RestCatalogService extends PersistentBase {
         ctx,
         (catalog, database) -> {
           List<TableIdentifier> tableIdentifiers =
-              catalog.listTables(database).stream()
-                  .map(i -> TableIdentifier.of(database, i.getIdentifier().getTableName()))
+              catalog.listTableIdentifiers(database).stream()
+                  .map(i -> TableIdentifier.of(database, i.getTableName()))
                   .collect(Collectors.toList());
 
           return ListTablesResponse.builder().addAll(tableIdentifiers).build();

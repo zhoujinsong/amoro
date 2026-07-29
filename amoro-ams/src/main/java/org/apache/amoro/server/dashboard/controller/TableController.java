@@ -39,6 +39,7 @@ import org.apache.amoro.process.ProcessStatus;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.properties.HiveTableProperties;
 import org.apache.amoro.server.catalog.CatalogManager;
+import org.apache.amoro.server.catalog.ExternalCatalog;
 import org.apache.amoro.server.catalog.ServerCatalog;
 import org.apache.amoro.server.dashboard.ServerTableDescriptor;
 import org.apache.amoro.server.dashboard.ServerTableProperties;
@@ -596,13 +597,21 @@ public class TableController {
           }
         };
 
+    // For external catalogs (e.g. Gravitino) resolving each table's format costs a per-table
+    // metadata round-trip, so degrade to name-only listing and report all tables as ICEBERG.
     List<TableMeta> tables =
-        serverCatalog.listTables(db).stream()
-            .map(
-                idWithFormat ->
-                    new TableMeta(
-                        idWithFormat.getIdentifier().getTableName(),
-                        formatToType.apply(idWithFormat.getTableFormat())))
+        (serverCatalog instanceof ExternalCatalog
+                ? serverCatalog.listTableIdentifiers(db).stream()
+                    .map(
+                        id ->
+                            new TableMeta(
+                                id.getTableName(), TableMeta.TableType.ICEBERG.toString()))
+                : serverCatalog.listTables(db).stream()
+                    .map(
+                        idWithFormat ->
+                            new TableMeta(
+                                idWithFormat.getIdentifier().getTableName(),
+                                formatToType.apply(idWithFormat.getTableFormat()))))
             // Sort by table format and table name
             .sorted(
                 (table1, table2) -> {

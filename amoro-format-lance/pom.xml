@@ -24,7 +24,7 @@
     <parent>
         <groupId>org.apache.amoro</groupId>
         <artifactId>amoro-parent</artifactId>
-        <version>tclake-0.9.0-170-SNAPSHOT</version>
+        <version>tclake-0.9.0-163-SNAPSHOT</version>
     </parent>
 
     <artifactId>amoro-format-lance</artifactId>
@@ -162,5 +162,17 @@
             <version>5.6.246.3</version>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

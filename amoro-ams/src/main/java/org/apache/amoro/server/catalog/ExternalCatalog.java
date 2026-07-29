@@ -26,8 +26,10 @@ import org.apache.amoro.TableIDWithFormat;
 import org.apache.amoro.UnifiedCatalog;
 import org.apache.amoro.api.CatalogMeta;
 import org.apache.amoro.properties.CatalogMetaProperties;
+import org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalog;
 import org.apache.amoro.server.persistence.mapper.TableMetaMapper;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
+import org.apache.amoro.table.TableIdentifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,9 +45,15 @@ public class ExternalCatalog extends ServerCatalog {
 
   protected ExternalCatalog(CatalogMeta metadata) {
     super(metadata);
-    this.unifiedCatalog =
-        metaStore.doAs(() -> new CommonUnifiedCatalog(this::getMetadata, Maps.newHashMap()));
+    this.unifiedCatalog = metaStore.doAs(() -> buildUnifiedCatalog(metadata));
     catalogMetadataChanged();
+  }
+
+  private UnifiedCatalog buildUnifiedCatalog(CatalogMeta metadata) {
+    if (CatalogMetaProperties.CATALOG_TYPE_GRAVITINO.equalsIgnoreCase(metadata.getCatalogType())) {
+      return new GravitinoUnifiedCatalog(this::getMetadata, Maps.newHashMap());
+    }
+    return new CommonUnifiedCatalog(this::getMetadata, Maps.newHashMap());
   }
 
   @Override
@@ -114,19 +122,33 @@ public class ExternalCatalog extends ServerCatalog {
                 unifiedCatalog.listTables(database).stream()
                     .filter(
                         tableIDWithFormat ->
-                            tableFilterPattern == null
-                                || tableFilterPattern
-                                    .matcher(
-                                        (database
-                                            + "."
-                                            + tableIDWithFormat.getIdentifier().getTableName()))
-                                    .matches())
+                            tableMatchesFilter(
+                                database, tableIDWithFormat.getIdentifier().getTableName()))
                     .collect(Collectors.toList())));
+  }
+
+  @Override
+  public List<TableIdentifier> listTableIdentifiers(String database) {
+    return doAs(
+        () ->
+            new ArrayList<>(
+                unifiedCatalog.listTableIdentifiers(database).stream()
+                    .filter(identifier -> tableMatchesFilter(database, identifier.getTableName()))
+                    .collect(Collectors.toList())));
+  }
+
+  private boolean tableMatchesFilter(String database, String tableName) {
+    return tableFilterPattern == null
+        || tableFilterPattern.matcher(database + "." + tableName).matches();
   }
 
   @Override
   public AmoroTable<?> loadTable(String database, String tableName) {
     return doAs(() -> unifiedCatalog.loadTable(database, tableName));
+  }
+
+  public TableFormat loadTableFormat(String database, String tableName) {
+    return doAs(() -> unifiedCatalog.loadTableFormat(database, tableName));
   }
 
   private void updateDatabaseFilter(CatalogMeta metadata) {

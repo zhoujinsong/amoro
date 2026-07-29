@@ -23,10 +23,12 @@ import org.apache.amoro.TableIDWithFormat;
 import org.apache.amoro.api.CatalogMeta;
 import org.apache.amoro.server.persistence.PersistentBase;
 import org.apache.amoro.server.persistence.mapper.CatalogMetaMapper;
+import org.apache.amoro.table.TableIdentifier;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 public abstract class ServerCatalog extends PersistentBase {
 
@@ -80,6 +82,12 @@ public abstract class ServerCatalog extends PersistentBase {
   public abstract List<TableIDWithFormat> listTables();
 
   public abstract List<TableIDWithFormat> listTables(String database);
+
+  public List<TableIdentifier> listTableIdentifiers(String database) {
+    return listTables(database).stream()
+        .map(TableIDWithFormat::getIdentifier)
+        .collect(Collectors.toList());
+  }
 
   public abstract AmoroTable<?> loadTable(String database, String tableName);
 

@@ -42,7 +42,9 @@ import org.lance.Dataset;
 import org.lance.ReadOptions;
 import org.lance.WriteParams;
 import org.lance.namespace.LanceNamespace;
+import org.lance.namespace.errors.NamespaceAlreadyExistsException;
 import org.lance.namespace.errors.NamespaceNotFoundException;
+import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.hive3.Hive3Namespace;
 import org.lance.namespace.hive3.Hive3NamespaceConfig;
 import org.lance.namespace.model.CreateNamespaceRequest;
@@ -60,6 +62,8 @@ import org.lance.namespace.model.ListNamespacesRequest;
 import org.lance.namespace.model.ListNamespacesResponse;
 import org.lance.namespace.model.ListTablesRequest;
 import org.lance.namespace.model.ListTablesResponse;
+import org.lance.namespace.model.NamespaceExistsRequest;
+import org.lance.namespace.model.TableExistsRequest;
 import org.lance.operation.UpdateConfig;
 import org.lance.operation.UpdateMap;
 import org.slf4j.Logger;
@@ -69,6 +73,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -86,14 +91,19 @@ public class LanceHiveCatalog implements FormatCatalog {
 
   private static final String HIVE3_CATALOG_LOCATION_URI_KEY = "catalog.location.uri";
 
-  /** Hadoop Configuration 中 COS region 的兜底配置 key。 */
+  /** Hadoop Configuration fallback key for COS region. */
   private static final String HADOOP_COS_REGION_KEY = "fs.cosn.bucket.region";
 
-  /** TCLake 获取 COS 临时密钥的服务端地址 key，底层 TCLakeCOSCredentialsProvider 从 hadoopConf 读取。 */
+  /**
+   * TCLake server URL key for COS temporary credentials; read from hadoopConf by
+   * LanceCOSCredentialsProvider.
+   */
   private static final String TCLAKE_CRED_SERVER_URL_KEY = "tclake.cos.credentials.server.url";
 
-  /** TCLake appid key，底层 TCLakeCOSCredentialsProvider 从 hadoopConf 读取。 */
+  /** TCLake appid key; read from hadoopConf by LanceCOSCredentialsProvider. */
   private static final String TCLAKE_CRED_USER_APPID_KEY = "tclake.cos.credentials.user.appid";
+
+  private static final String SELF_OPTIMIZING_GROUP_KEY = "table.self-optimizing.group";
 
   private final String catalogName;
   private final LanceNamespace hive3Namespace;
@@ -103,8 +113,9 @@ public class LanceHiveCatalog implements FormatCatalog {
   private final BufferAllocator allocator;
 
   /**
-   * Lance COS 临时密钥提供者，仅在启用 TCLake 场景下非 null。 当 {@link #loadTable(String, String)} 在 catalog
-   * 级别无法直接拿到 cos 密钥时，通过该 provider 基于表 location 的 bucket 向 TCLake 动态申请临时密钥。
+   * Lance COS temporary credentials provider; non-null only when TCLake is enabled. When {@link
+   * #loadTable(String, String)} cannot obtain cos credentials at the catalog level, this provider
+   * dynamically requests temporary credentials from TCLake based on the table location's bucket.
    */
   private final LanceCOSCredentialsProvider cosCredentialsProvider;
 
@@ -127,14 +138,16 @@ public class LanceHiveCatalog implements FormatCatalog {
   /**
    * Create a new LanceHiveCatalog instance with an optional Hadoop Configuration.
    *
-   * <p>当传入 {@code hadoopConf} 时，会尝试基于其中的 TCLake 配置构造 {@link LanceCOSCredentialsProvider}， 用于 {@link
-   * #loadTable(String, String)} 场景下按表 bucket 动态申请 COS 临时密钥。
+   * <p>When {@code hadoopConf} is provided, a {@link LanceCOSCredentialsProvider} is built from the
+   * TCLake configuration in it, used to dynamically request COS temporary credentials per-table
+   * bucket in {@link #loadTable(String, String)}.
    *
    * @param catalogName catalog name, falls back to "hive" if null or empty
    * @param hive3Namespace the Hive3 namespace client for HMS operations
    * @param properties catalog-level properties including storage and HMS configurations
    * @param allocator Arrow memory allocator for Lance dataset operations
-   * @param hadoopConf Hadoop Configuration，允许为 null（如传入，会用于申请 COS 临时密钥）
+   * @param hadoopConf Hadoop Configuration, may be null (when provided, used to request COS
+   *     temporary credentials)
    */
   public LanceHiveCatalog(
       String catalogName,
@@ -142,14 +155,14 @@ public class LanceHiveCatalog implements FormatCatalog {
       Map<String, String> properties,
       BufferAllocator allocator,
       Configuration hadoopConf) {
-    this.catalogName = catalogName;
+    this.catalogName = resolveHmsCatalogName(catalogName, properties);
     this.hive3Namespace = hive3Namespace;
     this.properties = properties;
     this.allocator = allocator;
     this.root = properties.get(Hive3NamespaceConfig.ROOT);
     this.cosCredentialsProvider = buildCosCredentialsProvider(properties, hadoopConf);
     if (!"hive".equals(name())) {
-      // 启用hive3特性，使用三层namespace catalog-db-table
+      // Enable hive3 feature: use three-level namespace catalog-db-table
       CreateNamespaceRequest request = new CreateNamespaceRequest();
       request.setId(Arrays.asList(name()));
       Map<String, String> namespaceProperties = new HashMap<>(properties);
@@ -163,7 +176,7 @@ public class LanceHiveCatalog implements FormatCatalog {
       }
       request.setProperties(namespaceProperties);
       request.setMode(CREATE_MODE_EXIST_OK);
-      // 初始化HMS中的catalog
+      // Initialize the catalog in HMS
       this.hive3Namespace.createNamespace(request);
       LOG.info("Created HMS catalog: " + name());
     }
@@ -176,21 +189,24 @@ public class LanceHiveCatalog implements FormatCatalog {
   }
 
   /**
-   * 基于 catalog properties + Hadoop Configuration 尝试构造 {@link LanceCOSCredentialsProvider}。
+   * Build a {@link LanceCOSCredentialsProvider} from catalog properties + Hadoop Configuration.
    *
-   * <p>构造成功的前提：
+   * <p>Prerequisites for successful construction:
    *
    * <ul>
-   *   <li>传入了非空的 {@code hadoopConf}；
-   *   <li>{@code hadoopConf} 中至少包含 TCLake 申请临时密钥必需的两个参数：{@code tclake.cos.credentials.server.url} 与
-   *       {@code tclake.cos.credentials.user.appid}。
+   *   <li>a non-null {@code hadoopConf} is provided;
+   *   <li>{@code hadoopConf} contains at least the two parameters required by TCLake to request
+   *       temporary credentials: {@code tclake.cos.credentials.server.url} and {@code
+   *       tclake.cos.credentials.user.appid}.
    * </ul>
    *
-   * <p>cos region 取值优先级：catalog properties 中的 {@code cos.region} &gt; Hadoop Configuration 中的
-   * {@code fs.cosn.bucket.region}，取不到则为空字符串（Lance 底层在 region 为空时会再尝试使用环境变量
-   * TENCENTCLOUD_REGION，但不建议依赖）。
+   * <p>COS region resolution priority: {@code cos.region} in catalog properties &gt; {@code
+   * fs.cosn.bucket.region} in Hadoop Configuration; defaults to empty string if neither is present
+   * (the Lance underlying layer will fall back to the {@code TENCENTCLOUD_REGION} environment
+   * variable when region is empty, but relying on this is not recommended).
    *
-   * @return 成功构造的 provider，失败或条件不满足时返回 null（表示不走 TCLake 动态申请逻辑）
+   * @return the constructed provider, or null if conditions are not met (meaning TCLake dynamic
+   *     credential request is skipped)
    */
   private static LanceCOSCredentialsProvider buildCosCredentialsProvider(
       Map<String, String> properties, Configuration hadoopConf) {
@@ -212,7 +228,7 @@ public class LanceHiveCatalog implements FormatCatalog {
       return null;
     }
 
-    // cos.region 取值：catalog properties > hadoopConf.fs.cosn.bucket.region > ""
+    // cos.region resolution: catalog properties > hadoopConf.fs.cosn.bucket.region > ""
     String cosRegion = properties == null ? null : properties.get(LanceProperties.COS_REGION);
     String regionSource = "catalogProperties";
     if (StringUtils.isBlank(cosRegion)) {
@@ -261,6 +277,32 @@ public class LanceHiveCatalog implements FormatCatalog {
     return catalogName;
   }
 
+  static String resolveHmsCatalogName(String catalogName, Map<String, String> properties) {
+    if (StringUtils.isBlank(catalogName) || properties == null) {
+      return catalogName;
+    }
+    String group = properties.get(SELF_OPTIMIZING_GROUP_KEY);
+    if (StringUtils.isBlank(group)) {
+      return catalogName;
+    }
+    int idx = group.indexOf('-');
+    String appid = idx > 0 ? group.substring(0, idx) : null;
+    if (StringUtils.isBlank(appid)) {
+      return catalogName;
+    }
+    String prefix = appid + "_";
+    if (!catalogName.startsWith(prefix)) {
+      return catalogName;
+    }
+    String stripped = catalogName.substring(prefix.length());
+    LOG.info(
+        "Stripped appid prefix '{}' from Amoro catalog '{}', HMS catalog name resolved to '{}'",
+        prefix,
+        catalogName,
+        stripped);
+    return stripped;
+  }
+
   /**
    * Factory method to create a LanceHiveCatalog from catalog properties and metastore
    * configuration.
@@ -297,11 +339,19 @@ public class LanceHiveCatalog implements FormatCatalog {
 
   @Override
   public List<String> listTables(String database) {
-    ListTablesRequest request = new ListTablesRequest();
-    request.setId(Arrays.asList(name(), database));
+    Set<String> allTables = new LinkedHashSet<>();
+    String pageToken = null;
     try {
-      ListTablesResponse response = hive3Namespace.listTables(request);
-      return new ArrayList<>(response.getTables());
+      do {
+        ListTablesRequest request = new ListTablesRequest();
+        request.setId(Arrays.asList(name(), database));
+        request.setPageToken(pageToken);
+        request.setLimit(LanceProperties.DEFAULT_PAGE_SIZE);
+        ListTablesResponse response = hive3Namespace.listTables(request);
+        allTables.addAll(response.getTables());
+        pageToken = response.getPageToken();
+      } while (pageToken != null && !pageToken.isEmpty());
+      return new ArrayList<>(allTables);
     } catch (NamespaceNotFoundException e) {
       throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
@@ -309,45 +359,66 @@ public class LanceHiveCatalog implements FormatCatalog {
 
   @Override
   public List<String> listDatabases() {
-    ListNamespacesRequest request = new ListNamespacesRequest();
-    request.setId(Arrays.asList(name()));
-    ListNamespacesResponse response = hive3Namespace.listNamespaces(request);
-    return new ArrayList<>(response.getNamespaces());
+    Set<String> allDatabases = new LinkedHashSet<>();
+    String pageToken = null;
+    do {
+      ListNamespacesRequest request = new ListNamespacesRequest();
+      request.setId(Arrays.asList(name()));
+      request.setPageToken(pageToken);
+      request.setLimit(LanceProperties.DEFAULT_PAGE_SIZE);
+      ListNamespacesResponse response = hive3Namespace.listNamespaces(request);
+      allDatabases.addAll(response.getNamespaces());
+      pageToken = response.getPageToken();
+    } while (pageToken != null && !pageToken.isEmpty());
+    return new ArrayList<>(allDatabases);
   }
 
   @Override
   public boolean databaseExists(String database) {
-    ListNamespacesRequest request = new ListNamespacesRequest();
-    request.setId(Arrays.asList(name()));
-    ListNamespacesResponse response = hive3Namespace.listNamespaces(request);
-    return response.getNamespaces().contains(database);
+    NamespaceExistsRequest request = new NamespaceExistsRequest();
+    request.setId(Arrays.asList(name(), database));
+    try {
+      hive3Namespace.namespaceExists(request);
+      return true;
+    } catch (NamespaceNotFoundException e) {
+      return false;
+    }
   }
 
   @Override
   public boolean tableExists(String database, String table) {
-    return listTables(database).contains(table);
+    TableExistsRequest request = new TableExistsRequest();
+    request.setId(Arrays.asList(name(), database, table));
+    try {
+      hive3Namespace.tableExists(request);
+      return true;
+    } catch (TableNotFoundException e) {
+      return false;
+    }
   }
 
   @Override
   public void createDatabase(String database) throws AlreadyExistsException {
-    if (databaseExists(database)) {
-      throw new AlreadyExistsException("Database already exists: " + database);
-    }
     CreateNamespaceRequest request = new CreateNamespaceRequest();
     request.setId(Arrays.asList(name(), database));
-    hive3Namespace.createNamespace(request);
+    try {
+      hive3Namespace.createNamespace(request);
+    } catch (NamespaceAlreadyExistsException e) {
+      throw new AlreadyExistsException("Database already exists: " + database);
+    }
   }
 
   @Override
   public void createDatabase(String database, Map<String, String> metadata)
       throws AlreadyExistsException {
-    if (databaseExists(database)) {
-      throw new AlreadyExistsException("Database already exists: " + database);
-    }
     CreateNamespaceRequest request = new CreateNamespaceRequest();
     request.setId(Arrays.asList(name(), database));
     request.setProperties(metadata);
-    hive3Namespace.createNamespace(request);
+    try {
+      hive3Namespace.createNamespace(request);
+    } catch (NamespaceAlreadyExistsException e) {
+      throw new AlreadyExistsException("Database already exists: " + database);
+    }
   }
 
   @Override
@@ -366,16 +437,16 @@ public class LanceHiveCatalog implements FormatCatalog {
 
   @Override
   public void dropDatabase(String database) throws NoSuchDatabaseException {
-    if (!databaseExists(database)) {
-      throw new NoSuchDatabaseException("Database does not exist: " + database);
-    }
     if (!listTables(database).isEmpty()) {
       throw new DatabaseNotEmptyException("Cannot drop non-empty database: " + database);
     }
-
     DropNamespaceRequest request = new DropNamespaceRequest();
     request.setId(Arrays.asList(name(), database));
-    hive3Namespace.dropNamespace(request);
+    try {
+      hive3Namespace.dropNamespace(request);
+    } catch (NamespaceNotFoundException e) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
+    }
   }
 
   @Override
@@ -409,14 +480,20 @@ public class LanceHiveCatalog implements FormatCatalog {
   public AmoroTable<?> loadTable(String database, String table, Map<String, String> storageOptions)
       throws NoSuchTableException {
     long start = System.currentTimeMillis();
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
+
     List<String> tableId = Arrays.asList(name(), database, table);
     // Use namespace to describe table and get location
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(tableId);
-    DescribeTableResponse response = hive3Namespace.describeTable(request);
+    DescribeTableResponse response;
+    try {
+      response = hive3Namespace.describeTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    }
 
     String location = response.getLocation();
     if (location == null || location.isEmpty()) {
@@ -424,45 +501,47 @@ public class LanceHiveCatalog implements FormatCatalog {
           "Failed to get table location for " + database + "." + table);
     }
 
-    // 合并存储配置：catalog 级别 + extraProperties 中 lance.storage. 前缀的配置
+    // Merge storage options: catalog-level + lance.storage. prefixed options from extraProperties
     Map<String, String> storageOptionsCopy = new HashMap<>(storageOptions);
     Map<String, String> mergedStorageOptions =
         LanceProperties.mergeStorageOptions(properties, storageOptionsCopy);
     TableIdentifier tableIdentifier = TableIdentifier.of(name(), database, table);
 
-    // 将 HMS 返回的 location 转换为 Lance SDK 使用的 cos:// 协议
+    // Convert HMS-returned location to the cos:// scheme used by the Lance SDK
     String lanceLocation = LanceProperties.toCosScheme(location);
 
     Dataset dataset;
     try {
       ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
       optionsBuilder.setStorageOptions(mergedStorageOptions);
-      dataset = Dataset.open(lanceLocation, optionsBuilder.build());
+      dataset = Dataset.open().uri(lanceLocation).readOptions(optionsBuilder.build()).build();
 
     } catch (Exception e) {
-      // 表仅在 HMS 中注册但尚未创建实际数据，返回空 LanceTable
-      LOG.warn(
-          "Failed to open dataset for {}.{} at {}, returning empty table: {}",
-          database,
-          table,
-          lanceLocation,
-          e.getMessage());
-      Map<String, String> emptyProperties = new HashMap<>();
-      emptyProperties.put(LanceProperties.TABLE_LOCATION, lanceLocation);
-      emptyProperties.put(LanceProperties.TABLE_EMPTY, "true");
-      LOG.info(
-          "loadTable success (empty table): {}.{}, location={}, elapsed={}ms",
-          database,
-          table,
-          lanceLocation,
-          System.currentTimeMillis() - start);
-      return new LanceTable(tableIdentifier, null, emptyProperties);
+      String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+      if (msg.contains("was not found")) {
+        LOG.info(
+            "Table {}.{} is registered but dataset not yet created at {}, returning empty table",
+            database,
+            table,
+            lanceLocation);
+        Map<String, String> emptyProperties = new HashMap<>();
+        emptyProperties.put(LanceProperties.TABLE_LOCATION, lanceLocation);
+        emptyProperties.put(LanceProperties.TABLE_EMPTY, "true");
+        LOG.info(
+            "loadTable success (empty table): {}.{}, location={}, elapsed={}ms",
+            database,
+            table,
+            lanceLocation,
+            System.currentTimeMillis() - start);
+        return new LanceTable(tableIdentifier, null, emptyProperties);
+      }
+      throw e;
     }
 
-    // 合并三个 metadata 源到统一的 tableProperties
+    // Merge the three metadata sources into unified tableProperties
     Map<String, String> mergedProperties = LanceProperties.mergeDatasetMetadata(dataset);
 
-    // 检查并补全 properties 中的 location 字段
+    // Check and inject the location field into properties if missing
     checkAndInjectLocation(dataset, mergedProperties);
 
     LanceTable lanceTable = new LanceTable(tableIdentifier, dataset, mergedProperties);
@@ -477,17 +556,22 @@ public class LanceHiveCatalog implements FormatCatalog {
 
   @Override
   public AmoroTable<?> loadTable(String database, String table) throws NoSuchTableException {
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
 
     Map<String, String> storageOptions = new HashMap<>();
     if (cosCredentialsProvider != null) {
-      // 取表 location 用于解析 bucket
+      // Get table location to resolve the bucket
       List<String> tableId = Arrays.asList(name(), database, table);
       DescribeTableRequest request = new DescribeTableRequest();
       request.setId(tableId);
-      DescribeTableResponse response = hive3Namespace.describeTable(request);
+      DescribeTableResponse response;
+      try {
+        response = hive3Namespace.describeTable(request);
+      } catch (TableNotFoundException e) {
+        throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+      }
       String location = response.getLocation();
       if (location == null || location.isEmpty()) {
         throw new IllegalArgumentException(
@@ -496,8 +580,10 @@ public class LanceHiveCatalog implements FormatCatalog {
       String lanceLocation = LanceProperties.toCosScheme(location);
 
       try {
-        // LanceCOSCredentialsProvider 返回的是无前缀 key，而 loadTable(db,table,storageOptions)
-        // 期望带 lance.storage. 前缀的参数，所以这里统一加上前缀再传入。
+        // LanceCOSCredentialsProvider returns unprefixed keys, but
+        // loadTable(db,table,storageOptions)
+        // expects lance.storage. prefixed parameters, so add the prefix here before passing them
+        // in.
         Map<String, String> dynamic = cosCredentialsProvider.getStorageOptions(lanceLocation);
         for (Map.Entry<String, String> e : dynamic.entrySet()) {
           storageOptions.put(LanceProperties.LANCE_STORAGE_PREFIX + e.getKey(), e.getValue());
@@ -523,9 +609,10 @@ public class LanceHiveCatalog implements FormatCatalog {
   }
 
   /**
-   * 获取表的存储位置（仅查询 HMS，不涉及 COS 临时密钥或 Lance 数据加载）。
+   * Get the table storage location (queries HMS only, no COS temporary credentials or Lance data
+   * loading).
    *
-   * <p>返回的 location 会统一转换为 Lance SDK 使用的 {@code cos://} 协议。
+   * <p>The returned location is converted to the {@code cos://} scheme used by the Lance SDK.
    *
    * @param database database name
    * @param table table name
@@ -534,12 +621,18 @@ public class LanceHiveCatalog implements FormatCatalog {
    * @throws IllegalArgumentException if HMS returns a null/empty location
    */
   public String getTableLocation(String database, String table) throws NoSuchTableException {
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
+
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(Arrays.asList(name(), database, table));
-    DescribeTableResponse response = hive3Namespace.describeTable(request);
+    DescribeTableResponse response;
+    try {
+      response = hive3Namespace.describeTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    }
 
     String location = response.getLocation();
     if (location == null || location.isEmpty()) {
@@ -563,14 +656,19 @@ public class LanceHiveCatalog implements FormatCatalog {
    */
   @Override
   public boolean dropTable(String database, String table, boolean purge) {
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
+
     List<String> tableId = Arrays.asList(name(), database, table);
     if (purge) {
       DropTableRequest request = new DropTableRequest();
       request.setId(tableId);
-      hive3Namespace.dropTable(request);
+      try {
+        hive3Namespace.dropTable(request);
+      } catch (TableNotFoundException e) {
+        throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+      }
       LOG.info("dropTable success (purge=true, data files deleted): {}.{}", database, table);
     } else {
       deregisterTable(database, table);
@@ -590,13 +688,19 @@ public class LanceHiveCatalog implements FormatCatalog {
    * @return deregister response from HMS
    */
   public DeregisterTableResponse deregisterTable(String database, String table) {
-    if (!tableExists(database, table)) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    if (!databaseExists(database)) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
     }
+
     DeregisterTableRequest request = new DeregisterTableRequest();
     List<String> tableId = Arrays.asList(name(), database, table);
     request.setId(tableId);
-    DeregisterTableResponse response = hive3Namespace.deregisterTable(request);
+    DeregisterTableResponse response;
+    try {
+      response = hive3Namespace.deregisterTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    }
     response.setLocation(toCosScheme(response.getLocation()));
     return response;
   }
@@ -634,16 +738,17 @@ public class LanceHiveCatalog implements FormatCatalog {
       location =
           getDefaultTableLocation(tableIdentifier.getDatabase(), tableIdentifier.getTableName());
     }
-    // 传给 HMS 的 location 使用 cosn:// 协议（Hive 需要通过 Hadoop FileSystem 识别）
+    // The location passed to HMS uses the cosn:// scheme (Hive needs it for Hadoop FileSystem
+    // recognition)
     String hmsLocation = LanceProperties.toCosnScheme(location);
-    // 1. 先通过 declareTable 在 Hive Metastore 中注册表元数据
+    // 1. Register table metadata in Hive Metastore via declareTable
     DeclareTableResponse declareResponse =
         declareTable(tableIdentifier, hmsLocation, tableProperties);
 
     String resolvedLocation = declareResponse.getLocation();
     tableProperties.put(LanceProperties.TABLE_LOCATION, resolvedLocation);
 
-    // 2. 从 tableProperties 中提取 lance.storage. 前缀的存储配置，并从 properties 中移除
+    // 2. Extract lance.storage. prefixed storage options from tableProperties and remove them
     Map<String, String> storageOptions =
         LanceProperties.mergeStorageOptions(properties, tableProperties);
 
@@ -657,7 +762,7 @@ public class LanceHiveCatalog implements FormatCatalog {
             .dataStorageVersion(dataStorageVersion)
             .execute();
 
-    // 3. 通过 UpdateConfig 更新表元数据（已移除 storage 参数）
+    // 3. Update table metadata via UpdateConfig (storage options already removed)
     UpdateConfig config =
         UpdateConfig.builder()
             .tableMetadataUpdates(
@@ -675,23 +780,24 @@ public class LanceHiveCatalog implements FormatCatalog {
   }
 
   /**
-   * 根据 root 路径拼接默认的表存储位置。
+   * Build the default table storage location from the root path.
    *
-   * <p>路径格式：
+   * <p>Path format:
    *
    * <ul>
-   *   <li>catalogName 为 "hive" 时：{root}/{dbName}.db/{tableName}.lance
-   *   <li>其他 catalogName：{root}/{catalogName}/{dbName}.db/{tableName}.lance
+   *   <li>when catalogName is "hive": {root}/{dbName}.db/{tableName}.lance
+   *   <li>otherwise: {root}/{catalogName}/{dbName}.db/{tableName}.lance
    * </ul>
    *
-   * @param dbName 数据库名
-   * @param tableName 表名
-   * @return 默认的表存储位置，如果 root 未配置则返回 null
+   * @param dbName database name
+   * @param tableName table name
+   * @return the default table storage location, or null if root is not configured
    */
   public String getDefaultTableLocation(String dbName, String tableName) {
     if (root == null || root.isEmpty()) {
       LOG.warn(
-          "未配置 ROOT 参数（{}），无法生成默认 location，将使用 Hive 默认的 location 分配", Hive3NamespaceConfig.ROOT);
+          "ROOT parameter ({}) is not configured, cannot generate default location, will use Hive default location allocation",
+          Hive3NamespaceConfig.ROOT);
       return null;
     }
     if ("hive".equalsIgnoreCase(name())) {
@@ -704,11 +810,13 @@ public class LanceHiveCatalog implements FormatCatalog {
   }
 
   /**
-   * declareTable 不会具体保存表参数，后续通过 namespace 写入表也不会自动注入 location 导致下游 loadTable 参数缺失。 检查传入的 properties
-   * 中是否包含 location 字段，如果缺失则通过 dataset.uri() 直接注入到 properties 中（不产生 commit）。
+   * declareTable does not persist table properties, and subsequent writes via the namespace do not
+   * automatically inject location, causing downstream loadTable to miss the location parameter.
+   * Check whether the passed-in properties contain the location field; if missing, inject it
+   * directly from dataset.uri() into properties (without producing a commit).
    *
-   * @param dataset 已打开的 Lance 数据集
-   * @param properties 待补全的 properties，方法会原地修改该 Map
+   * @param dataset the opened Lance dataset
+   * @param properties the properties to complete; this method modifies the Map in place
    */
   private void checkAndInjectLocation(Dataset dataset, Map<String, String> properties) {
     if (properties == null) {
@@ -753,13 +861,14 @@ public class LanceHiveCatalog implements FormatCatalog {
       location =
           getDefaultTableLocation(tableIdentifier.getDatabase(), tableIdentifier.getTableName());
     }
-    // 传给 HMS 的 location 使用 cosn:// 协议（Hive 需要通过 Hadoop FileSystem 识别）
+    // The location passed to HMS uses the cosn:// scheme (Hive needs it for Hadoop FileSystem
+    // recognition)
     request.setLocation(LanceProperties.toCosnScheme(location));
-    // 底层hive不会对tableProperties 做任何操作
+    // The underlying hive does not perform any operation on tableProperties
     request.setProperties(tableProperties);
     DeclareTableResponse response = this.hive3Namespace.declareTable(request);
 
-    // 将 HMS 返回的 location 转换为 Lance SDK 使用的 cos:// 协议
+    // Convert HMS-returned location to the cos:// scheme used by the Lance SDK
     response.setLocation(LanceProperties.toCosScheme(response.getLocation()));
     return response;
   }

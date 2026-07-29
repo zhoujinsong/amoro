@@ -38,30 +38,39 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Lance COS 临时密钥提供者。
+ * Provider of temporary Tencent Cloud COS credentials for Lance.
  *
- * <p>底层通过 {@link TCLakeCOSCredentialsProvider} 向 TCLake 申请腾讯云 COS 临时密钥。每张 Lance 表的 location 对应不同的
- * bucket（例如 {@code cosn://bucket-a/...} 与 {@code cosn://bucket-b/...}），而 TCLake 在申请时会使用 {@code
- * URI.getHost()} 作为 {@code X-Bucket} header，因此同一个 catalog 下的多张表必须分别以各自的 bucket 构造 delegate
- * 申请秘钥，否则会因为 bucket 不匹配导致 403 PermissionDenied。
+ * <p>Under the hood it requests temporary COS credentials from TCLake via {@link
+ * TCLakeCOSCredentialsProvider}. Each Lance table location maps to a different bucket (e.g. {@code
+ * cosn://bucket-a/...} and {@code cosn://bucket-b/...}), and TCLake uses {@code URI.getHost()} as
+ * the {@code X-Bucket} header when issuing credentials. Therefore tables under the same catalog
+ * must build the delegate with their own bucket to request credentials; otherwise a bucket mismatch
+ * leads to a 403 PermissionDenied.
  *
- * <p>缓存策略：
+ * <p>Caching strategy:
  *
  * <ul>
- *   <li>以 bucket（小写）为 key 做 <b>进程级全局缓存</b>，避免 catalog 重新 initialize 时缓存丢失；
- *   <li>每个 bucket 的秘钥固定缓存 TTL（默认 5 分钟），过期后重新申请；
- *   <li>使用 {@link ConcurrentHashMap} + 每 bucket 一把 {@link ReentrantLock} 保证并发下同一 bucket 仅刷新一次；
- *   <li>不同 bucket 之间刷新互不阻塞。
+ *   <li>a <b>process-wide global cache</b> keyed by bucket (lowercased), so credentials are not
+ *       lost when a catalog is re-initialized;
+ *   <li>each bucket's credentials are refreshed early at <b>50% of their actual lifetime</b> (i.e.
+ *       once half of the window has elapsed); when the expiration time is unavailable it falls back
+ *       to a fixed TTL (default 5 minutes);
+ *   <li>a {@link ConcurrentHashMap} plus one {@link ReentrantLock} per bucket guarantees that a
+ *       given bucket is refreshed only once under concurrency;
+ *   <li>refreshes of different buckets do not block each other.
  * </ul>
  */
 public class LanceCOSCredentialsProvider {
 
   private static final Logger LOG = LoggerFactory.getLogger(LanceCOSCredentialsProvider.class);
 
-  /** 默认缓存 TTL：5 分钟。 */
+  /**
+   * Fallback cache TTL: used only when the credential expiration time is unavailable from TCLake;
+   * defaults to 5 minutes.
+   */
   private static final Duration DEFAULT_CACHE_TTL = Duration.ofMinutes(5);
 
-  /** 进程级全局缓存：bucket(lowercase) -> 缓存条目。 */
+  /** Process-wide global cache: bucket(lowercase) -> cache entry. */
   private static final ConcurrentMap<String, CacheEntry> GLOBAL_CACHE = new ConcurrentHashMap<>();
 
   private final Configuration hadoopConf;
@@ -69,22 +78,23 @@ public class LanceCOSCredentialsProvider {
   private final Duration cacheTtl;
 
   /**
-   * 构造 provider，使用默认 5 分钟 TTL。
+   * Construct the provider using the default 5-minute TTL.
    *
-   * @param hadoopConf catalog 级别的 Hadoop Configuration，会原样透传给底层 TCLake provider（其中包含
-   *     tclake.cos.credentials.server.url / tclake.cos.credentials.user.appid 等配置）。
-   * @param cosRegion COS 区域，允许为空字符串。
+   * @param hadoopConf the catalog-level Hadoop Configuration, passed through as-is to the
+   *     underlying TCLake provider (containing tclake.cos.credentials.server.url /
+   *     tclake.cos.credentials.user.appid, etc.).
+   * @param cosRegion the COS region; an empty string is allowed.
    */
   public LanceCOSCredentialsProvider(Configuration hadoopConf, String cosRegion) {
     this(hadoopConf, cosRegion, DEFAULT_CACHE_TTL);
   }
 
   /**
-   * 构造 provider，并指定缓存 TTL。
+   * Construct the provider with a specified cache TTL.
    *
-   * @param hadoopConf catalog 级别的 Hadoop Configuration，不能为 null。
-   * @param cosRegion COS 区域，允许为空字符串。
-   * @param cacheTtl 缓存有效期，必须为正数。
+   * @param hadoopConf the catalog-level Hadoop Configuration; must not be null.
+   * @param cosRegion the COS region; an empty string is allowed.
+   * @param cacheTtl the cache lifetime; must be positive.
    */
   public LanceCOSCredentialsProvider(
       Configuration hadoopConf, String cosRegion, Duration cacheTtl) {
@@ -98,15 +108,17 @@ public class LanceCOSCredentialsProvider {
   }
 
   /**
-   * 获取指定表 location 对应 bucket 的 COS 存储选项，返回值可直接作为 Lance storage options 使用。
+   * Get the COS storage options for the bucket of the given table location; the returned value can
+   * be used directly as Lance storage options.
    *
-   * <p>内部以 bucket 为维度做全局缓存，若缓存命中且未过期则直接返回；否则以该 bucket 构造一个 {@link TCLakeCOSCredentialsProvider} 向
-   * TCLake 申请一份新的临时密钥。
+   * <p>Internally a global cache is kept per bucket. On a fresh (non-expired) cache hit it is
+   * returned directly; otherwise a {@link TCLakeCOSCredentialsProvider} is built for that bucket to
+   * request a new temporary credential from TCLake.
    *
-   * @param tableLocation 表的完整 location，必须是带 scheme 的 URI，例如 {@code cosn://{bucket}/path/to/table} 或
-   *     {@code cos://{bucket}/path/to/table}。
-   * @return Lance storage options（region/secretId/secretKey/sessionToken）。
-   * @throws IllegalArgumentException location 为空或无法解析出 bucket 时抛出。
+   * @param tableLocation the full table location; must be a URI with a scheme, e.g. {@code
+   *     cosn://{bucket}/path/to/table} or {@code cos://{bucket}/path/to/table}.
+   * @return Lance storage options (region/secretId/secretKey/sessionToken[/expires]).
+   * @throws IllegalArgumentException if the location is blank or the bucket cannot be parsed.
    */
   public Map<String, String> getStorageOptions(String tableLocation) {
     String bucket = extractBucket(tableLocation);
@@ -115,7 +127,7 @@ public class LanceCOSCredentialsProvider {
       LOG.info(
           "Return Lance COS storage options: bucket={}, region={}, secretIdPrefix={},"
               + " secretIdLen={}, secretKeyLen={}, sessionTokenPrefix={}, sessionTokenLen={},"
-              + " issuedAt={}, ageSeconds={}",
+              + " issuedAt={}, ageSeconds={}, expireAtMillis={}",
           bucket,
           cosRegion,
           maskPrefix(snapshot.secretId),
@@ -124,16 +136,22 @@ public class LanceCOSCredentialsProvider {
           maskPrefix(snapshot.securityToken),
           snapshot.securityToken.length(),
           snapshot.issuedAt,
-          Duration.between(snapshot.issuedAt, Instant.now()).getSeconds());
+          Duration.between(snapshot.issuedAt, Instant.now()).getSeconds(),
+          snapshot.expireAtMillis);
     }
-    return ImmutableMap.of(
-        LanceProperties.COS_REGION, cosRegion,
-        LanceProperties.COS_SECRET_ID, snapshot.secretId,
-        LanceProperties.COS_SECRET_KEY, snapshot.secretKey,
-        LanceProperties.COS_SECURITY_TOKEN, snapshot.securityToken);
+    ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
+    builder.put(LanceProperties.COS_REGION, cosRegion);
+    builder.put(LanceProperties.COS_SECRET_ID, snapshot.secretId);
+    builder.put(LanceProperties.COS_SECRET_KEY, snapshot.secretKey);
+    builder.put(LanceProperties.COS_SECURITY_TOKEN, snapshot.securityToken);
+    // The temporary credential expiration time (epoch millis), exposed to the Lance storage option.
+    if (snapshot.expireAtMillis > 0) {
+      builder.put(LanceProperties.EXPIRES_AT_MILLIS, String.valueOf(snapshot.expireAtMillis));
+    }
+    return builder.build();
   }
 
-  /** 从表 location 中解析 bucket（即 URI 的 host）。 */
+  /** Parse the bucket (i.e. the URI host) from a table location. */
   private static String extractBucket(String tableLocation) {
     if (StringUtils.isBlank(tableLocation)) {
       throw new IllegalArgumentException("tableLocation must not be blank");
@@ -152,7 +170,7 @@ public class LanceCOSCredentialsProvider {
     }
   }
 
-  /** 按 bucket 维度获取缓存快照，必要时触发刷新。 */
+  /** Get the cached snapshot for a bucket, triggering a refresh when necessary. */
   private CachedCredentials getOrRefresh(String bucket, String tableLocation) {
     CacheEntry entry = GLOBAL_CACHE.computeIfAbsent(bucket, k -> new CacheEntry());
 
@@ -168,7 +186,7 @@ public class LanceCOSCredentialsProvider {
 
     entry.lock.lock();
     try {
-      // double-check：进入临界区后再次校验，避免重复刷新
+      // double-check: re-validate after entering the critical section to avoid duplicate refreshes
       snapshot = entry.credentials;
       if (snapshot == null || isExpired(snapshot)) {
         if (snapshot == null) {
@@ -200,17 +218,35 @@ public class LanceCOSCredentialsProvider {
     }
   }
 
-  /** 判断缓存是否已超过 TTL。 */
+  /**
+   * Decide whether the cached snapshot needs to be refreshed.
+   *
+   * <p>Expiration policy: a temporary credential is refreshed early at <b>50% of its actual
+   * lifetime</b> — i.e. once more than half of the window from issuance to the TCLake-returned
+   * expiration time has elapsed, it is considered expired. This leaves enough buffer for subsequent
+   * COS requests and avoids using a credential that is about to expire.
+   *
+   * <p>When a valid expiration time is unavailable ({@code expireAtMillis <= 0} or not later than
+   * the issuance time), it falls back to the fixed {@link #cacheTtl}.
+   */
   private boolean isExpired(CachedCredentials snapshot) {
+    long nowMillis = System.currentTimeMillis();
+    long issuedMillis = snapshot.issuedAt.toEpochMilli();
+    if (snapshot.expireAtMillis > issuedMillis) {
+      long halfLifeMillis = issuedMillis + (snapshot.expireAtMillis - issuedMillis) / 2;
+      return nowMillis >= halfLifeMillis;
+    }
+    // Fall back to the fixed TTL when no valid expiration time is available.
     return Duration.between(snapshot.issuedAt, Instant.now()).compareTo(cacheTtl) >= 0;
   }
 
   /**
-   * 按表 location 构造底层 {@link TCLakeCOSCredentialsProvider}（URI 的 host 即 bucket），向 TCLake 申请一份新的
-   * 临时密钥。
+   * Build the underlying {@link TCLakeCOSCredentialsProvider} from the table location (the URI host
+   * is the bucket) and request a new temporary credential from TCLake.
    *
-   * <p>注意：每次刷新都会新建一个 TCLakeCOSCredentialsProvider 实例。该实例非常轻量，且这是确保 TCLake 请求里 {@code X-Bucket}
-   * header 正确指向目标 bucket 的必要手段。
+   * <p>Note: a new TCLakeCOSCredentialsProvider instance is created on every refresh. The instance
+   * is very lightweight, and this is required to ensure the {@code X-Bucket} header in the TCLake
+   * request points to the correct target bucket.
    */
   private CachedCredentials loadFromTCLake(String bucket, String tableLocation) {
     URI uri;
@@ -249,7 +285,9 @@ public class LanceCOSCredentialsProvider {
       String accessKeyId = rawCredentials.getCOSAccessKeyId();
       String rawSecretKey = rawCredentials.getCOSSecretKey();
       String sessionToken = rawCredentials.getSessionToken();
-      credentials = new InstanceCredentialsSnapshot(accessKeyId, rawSecretKey, sessionToken);
+      long expireTimeInMS = rawCredentials.getExpiredTime() * 1000;
+      credentials =
+          new InstanceCredentialsSnapshot(accessKeyId, rawSecretKey, sessionToken, expireTimeInMS);
     } catch (RuntimeException e) {
       LOG.error(
           "Failed to fetch Lance COS credentials from TCLake: bucket={}, uri={}, region={},"
@@ -270,14 +308,17 @@ public class LanceCOSCredentialsProvider {
     String securityToken = credentials.securityToken;
 
     Instant now = Instant.now();
-    CachedCredentials snapshot = new CachedCredentials(secretId, secretKey, securityToken, now);
+    CachedCredentials snapshot =
+        new CachedCredentials(secretId, secretKey, securityToken, now, credentials.expireAtMillis);
 
     LOG.info(
-        "Refreshed Lance COS credentials: bucket={}, issuedAt={}, cacheTtlSeconds={}, elapsedMs={},"
+        "Refreshed Lance COS credentials: bucket={}, issuedAt={}, expireAtMillis={},"
+            + " cacheTtlSeconds={}, elapsedMs={},"
             + " region={}, secretIdPrefix={}, secretIdLen={}, secretIdBlank={}, secretKeyLen={},"
             + " secretKeyBlank={}, sessionTokenPrefix={}, sessionTokenLen={}, sessionTokenBlank={}",
         bucket,
         snapshot.issuedAt,
+        snapshot.expireAtMillis,
         cacheTtl.getSeconds(),
         elapsedMs,
         cosRegion,
@@ -306,7 +347,10 @@ public class LanceCOSCredentialsProvider {
     return snapshot;
   }
 
-  /** 对敏感字符串做脱敏：只保留前 4 位，后面统一 ***，空串返回 "<empty>"。 */
+  /**
+   * Mask a sensitive string: keep only the first 4 chars followed by ***; return "<empty>" for
+   * blank.
+   */
   private static String maskPrefix(String value) {
     if (value == null || value.isEmpty()) {
       return "<empty>";
@@ -317,37 +361,57 @@ public class LanceCOSCredentialsProvider {
     return value.substring(0, 4) + "***";
   }
 
-  /** 每个 bucket 对应一条缓存条目，持有一份密钥快照和一把用于刷新的锁。 */
+  /** One cache entry per bucket, holding a credential snapshot and a lock used for refresh. */
   private static final class CacheEntry {
     private final ReentrantLock lock = new ReentrantLock();
     private volatile CachedCredentials credentials;
   }
 
-  /** 从底层 COSCredentials 中抽取出的不可变快照，避免其他方法直接依赖 qcloud 的具体类型。 */
+  /**
+   * An immutable snapshot extracted from the underlying COSCredentials, so other methods do not
+   * depend directly on the concrete qcloud type.
+   */
   private static final class InstanceCredentialsSnapshot {
     private final String secretId;
     private final String secretKey;
     private final String securityToken;
 
-    InstanceCredentialsSnapshot(String secretId, String secretKey, String securityToken) {
+    /** Temporary credential expiration time (epoch millis) from TCLake; 0 when unavailable. */
+    private final long expireAtMillis;
+
+    InstanceCredentialsSnapshot(
+        String secretId, String secretKey, String securityToken, long expireAtMillis) {
       this.secretId = secretId == null ? "" : secretId;
       this.secretKey = secretKey == null ? "" : secretKey;
       this.securityToken = securityToken == null ? "" : securityToken;
+      this.expireAtMillis = expireAtMillis;
     }
   }
 
-  /** 密钥缓存快照。 */
+  /** A cached credential snapshot. */
   private static final class CachedCredentials {
     private final String secretId;
     private final String secretKey;
     private final String securityToken;
     private final Instant issuedAt;
 
-    CachedCredentials(String secretId, String secretKey, String securityToken, Instant issuedAt) {
+    /**
+     * Temporary credential expiration time (epoch millis) from TCLake; 0 when unavailable. Used for
+     * the 50%-lifetime refresh decision and exposed to Lance.
+     */
+    private final long expireAtMillis;
+
+    CachedCredentials(
+        String secretId,
+        String secretKey,
+        String securityToken,
+        Instant issuedAt,
+        long expireAtMillis) {
       this.secretId = secretId == null ? "" : secretId;
       this.secretKey = secretKey == null ? "" : secretKey;
       this.securityToken = securityToken == null ? "" : securityToken;
       this.issuedAt = issuedAt;
+      this.expireAtMillis = expireAtMillis;
     }
   }
 }
