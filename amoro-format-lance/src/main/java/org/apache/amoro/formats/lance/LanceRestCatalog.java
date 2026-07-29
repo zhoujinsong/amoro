@@ -281,7 +281,7 @@ public class LanceRestCatalog implements FormatCatalog {
     optionsBuilder.setStorageOptions(storageOptions);
     Dataset dataset;
     try {
-      dataset = Dataset.open(lanceLocation, optionsBuilder.build());
+      dataset = Dataset.open().uri(lanceLocation).readOptions(optionsBuilder.build()).build();
     } catch (Exception e) {
       String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
       if (msg.contains("was not found")) {

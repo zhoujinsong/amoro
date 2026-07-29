@@ -123,75 +123,78 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       return buildEmptyServerTableMeta(amoroTable);
     }
     Dataset dataset = getDataset(amoroTable);
+    try {
+      ServerTableMeta serverTableMeta = new ServerTableMeta();
+      serverTableMeta.setTableIdentifier(amoroTable.id());
+      serverTableMeta.setTableType(amoroTable.format().name());
 
-    ServerTableMeta serverTableMeta = new ServerTableMeta();
-    serverTableMeta.setTableIdentifier(amoroTable.id());
-    serverTableMeta.setTableType(amoroTable.format().name());
+      // Build Schema info
+      Schema schema = dataset.getSchema();
+      List<AMSColumnInfo> columns = new ArrayList<>();
+      for (Field field : schema.getFields()) {
+        columns.add(
+            new AMSColumnInfo(
+                field.getName(),
+                field.getType().toString(),
+                !field.isNullable(),
+                field.getMetadata() != null ? field.getMetadata().toString() : null));
+      }
+      serverTableMeta.setSchema(columns);
 
-    // Build Schema info
-    Schema schema = dataset.getSchema();
-    List<AMSColumnInfo> columns = new ArrayList<>();
-    for (Field field : schema.getFields()) {
-      columns.add(
-          new AMSColumnInfo(
-              field.getName(),
-              field.getType().toString(),
-              !field.isNullable(),
-              field.getMetadata() != null ? field.getMetadata().toString() : null));
+      // Lance tables have no primary key
+      serverTableMeta.setPkList(Collections.emptyList());
+
+      // Lance tables have no partitions
+      serverTableMeta.setPartitionColumnList(Collections.emptyList());
+
+      // Build table properties; filter out sensitive COSN storage configurations
+      Map<String, String> properties = new HashMap<>(amoroTable.properties());
+      LanceProperties.removeSensitiveStorageConfigs(properties);
+      properties.put(TABLE_FORMAT, TableFormat.LANCE.name());
+      serverTableMeta.setProperties(properties);
+
+      Version currentVersion = dataset.getVersion();
+      ManifestSummary summary = currentVersion.getManifestSummary();
+
+      long totalRows = summary.getTotalRows();
+      // totalFilesSize is actually the total size of data files (Lance does not expose deletion
+      // file size at the underlying layer)
+      long totalFilesSize = summary.getTotalFilesSize();
+      long totalDataFiles = summary.getTotalDataFiles();
+      long totalDeletionFiles = summary.getTotalDeletionFiles();
+      long totalFragments = summary.getTotalFragments();
+
+      // Total file count = data files + deletion files
+      long totalFileCount = totalDataFiles + totalDeletionFiles;
+      // Average file size = data file total size / number of data files
+      long averageFileSize = totalDataFiles > 0 ? totalFilesSize / totalDataFiles : 0;
+
+      // Build table summary
+      TableSummary tableSummary =
+          new TableSummary(
+              (int) totalFileCount,
+              String.valueOf(totalFilesSize),
+              String.valueOf(averageFileSize),
+              totalRows,
+              TableFormat.LANCE.name());
+      serverTableMeta.setTableSummary(tableSummary);
+
+      Map<String, Object> baseMetric = new HashMap<>();
+      baseMetric.put(METRIC_VERSION, currentVersion.getId());
+      baseMetric.put(METRIC_ROW_COUNT, totalRows);
+      baseMetric.put(METRIC_TOTAL_SIZE, totalFilesSize);
+      baseMetric.put(METRIC_FILE_COUNT, totalFileCount);
+      baseMetric.put(METRIC_DATA_FILE_COUNT, totalDataFiles);
+      baseMetric.put(METRIC_DELETION_FILE_COUNT, totalDeletionFiles);
+      baseMetric.put(METRIC_FRAGMENT_COUNT, totalFragments);
+      baseMetric.put(METRIC_AVERAGE_FILE_SIZE, averageFileSize);
+
+      serverTableMeta.setBaseMetrics(baseMetric);
+
+      return serverTableMeta;
+    } finally {
+      closeDataset(dataset);
     }
-    serverTableMeta.setSchema(columns);
-
-    // Lance tables have no primary key
-    serverTableMeta.setPkList(Collections.emptyList());
-
-    // Lance tables have no partitions
-    serverTableMeta.setPartitionColumnList(Collections.emptyList());
-
-    // Build table properties; filter out sensitive COSN storage configurations
-    Map<String, String> properties = new HashMap<>(amoroTable.properties());
-    LanceProperties.removeSensitiveStorageConfigs(properties);
-    properties.put(TABLE_FORMAT, TableFormat.LANCE.name());
-    serverTableMeta.setProperties(properties);
-
-    Version currentVersion = dataset.getVersion();
-    ManifestSummary summary = currentVersion.getManifestSummary();
-
-    long totalRows = summary.getTotalRows();
-    // totalFilesSize is actually the total size of data files (Lance does not expose deletion
-    // file size at the underlying layer)
-    long totalFilesSize = summary.getTotalFilesSize();
-    long totalDataFiles = summary.getTotalDataFiles();
-    long totalDeletionFiles = summary.getTotalDeletionFiles();
-    long totalFragments = summary.getTotalFragments();
-
-    // Total file count = data files + deletion files
-    long totalFileCount = totalDataFiles + totalDeletionFiles;
-    // Average file size = data file total size / number of data files
-    long averageFileSize = totalDataFiles > 0 ? totalFilesSize / totalDataFiles : 0;
-
-    // Build table summary
-    TableSummary tableSummary =
-        new TableSummary(
-            (int) totalFileCount,
-            String.valueOf(totalFilesSize),
-            String.valueOf(averageFileSize),
-            totalRows,
-            TableFormat.LANCE.name());
-    serverTableMeta.setTableSummary(tableSummary);
-
-    Map<String, Object> baseMetric = new HashMap<>();
-    baseMetric.put(METRIC_VERSION, currentVersion.getId());
-    baseMetric.put(METRIC_ROW_COUNT, totalRows);
-    baseMetric.put(METRIC_TOTAL_SIZE, totalFilesSize);
-    baseMetric.put(METRIC_FILE_COUNT, totalFileCount);
-    baseMetric.put(METRIC_DATA_FILE_COUNT, totalDataFiles);
-    baseMetric.put(METRIC_DELETION_FILE_COUNT, totalDeletionFiles);
-    baseMetric.put(METRIC_FRAGMENT_COUNT, totalFragments);
-    baseMetric.put(METRIC_AVERAGE_FILE_SIZE, averageFileSize);
-
-    serverTableMeta.setBaseMetrics(baseMetric);
-
-    return serverTableMeta;
   }
 
   @Override
@@ -204,61 +207,66 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       return Collections.emptyList();
     }
     Dataset dataset = getDataset(amoroTable);
-    List<AmoroSnapshotsOfTable> snapshots = new ArrayList<>();
+    try {
+      List<AmoroSnapshotsOfTable> snapshots = new ArrayList<>();
 
-    List<Version> versions = dataset.listVersions();
-    for (Version version : versions) {
-      ManifestSummary summary = version.getManifestSummary();
+      List<Version> versions = dataset.listVersions();
+      for (Version version : versions) {
+        ManifestSummary summary = version.getManifestSummary();
 
-      Map<String, String> versionSummary = new HashMap<>();
-      versionSummary.put(SUMMARY_VERSION, String.valueOf(version.getId()));
-      versionSummary.put(SUMMARY_TOTAL_ROWS, String.valueOf(summary.getTotalRows()));
-      versionSummary.put(SUMMARY_TOTAL_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
-      versionSummary.put(SUMMARY_TOTAL_FILES_SIZE, String.valueOf(summary.getTotalFilesSize()));
-      versionSummary.put(SUMMARY_TOTAL_FRAGMENTS, String.valueOf(summary.getTotalFragments()));
-      versionSummary.put(
-          SUMMARY_TOTAL_DELETION_FILES, String.valueOf(summary.getTotalDeletionFiles()));
-      versionSummary.put(
-          SUMMARY_TOTAL_DELETION_FILE_ROWS, String.valueOf(summary.getTotalDeletionFileRows()));
+        Map<String, String> versionSummary = new HashMap<>();
+        versionSummary.put(SUMMARY_VERSION, String.valueOf(version.getId()));
+        versionSummary.put(SUMMARY_TOTAL_ROWS, String.valueOf(summary.getTotalRows()));
+        versionSummary.put(SUMMARY_TOTAL_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
+        versionSummary.put(SUMMARY_TOTAL_FILES_SIZE, String.valueOf(summary.getTotalFilesSize()));
+        versionSummary.put(SUMMARY_TOTAL_FRAGMENTS, String.valueOf(summary.getTotalFragments()));
+        versionSummary.put(
+            SUMMARY_TOTAL_DELETION_FILES, String.valueOf(summary.getTotalDeletionFiles()));
+        versionSummary.put(
+            SUMMARY_TOTAL_DELETION_FILE_ROWS, String.valueOf(summary.getTotalDeletionFileRows()));
 
-      // Convert ZonedDateTime to epoch millis
-      long commitTime =
-          version.getDataTime() != null ? version.getDataTime().toInstant().toEpochMilli() : 0L;
+        // Convert ZonedDateTime to epoch millis
+        long commitTime =
+            version.getDataTime() != null ? version.getDataTime().toInstant().toEpochMilli() : 0L;
 
-      // Total file count = data files + deletion files
-      long totalFileCount = summary.getTotalDataFiles() + summary.getTotalDeletionFiles();
+        // Total file count = data files + deletion files
+        long totalFileCount = summary.getTotalDataFiles() + summary.getTotalDeletionFiles();
 
-      AmoroSnapshotsOfTable snapshot =
-          new AmoroSnapshotsOfTable(
-              String.valueOf(version.getId()),
-              (int) totalFileCount,
-              summary.getTotalFilesSize(),
-              summary.getTotalRows(),
-              commitTime,
-              OPERATION_TYPE_APPEND,
-              STORAGE_TYPE_TCLAKE,
-              versionSummary);
+        AmoroSnapshotsOfTable snapshot =
+            new AmoroSnapshotsOfTable(
+                String.valueOf(version.getId()),
+                (int) totalFileCount,
+                summary.getTotalFilesSize(),
+                summary.getTotalRows(),
+                commitTime,
+                OPERATION_TYPE_APPEND,
+                STORAGE_TYPE_TCLAKE,
+                versionSummary);
 
-      Map<String, String> recordsSummaryForChart = new HashMap<>();
-      recordsSummaryForChart.put(CHART_TOTAL_RECORDS, String.valueOf(summary.getTotalRows()));
-      recordsSummaryForChart.put(
-          CHART_TOTAL_DELETE_RECORDS, String.valueOf(summary.getTotalDeletionFileRows()));
-      snapshot.setRecordsSummaryForChart(recordsSummaryForChart);
+        Map<String, String> recordsSummaryForChart = new HashMap<>();
+        recordsSummaryForChart.put(CHART_TOTAL_RECORDS, String.valueOf(summary.getTotalRows()));
+        recordsSummaryForChart.put(
+            CHART_TOTAL_DELETE_RECORDS, String.valueOf(summary.getTotalDeletionFileRows()));
+        snapshot.setRecordsSummaryForChart(recordsSummaryForChart);
 
-      Map<String, String> filesSummaryForChart = new HashMap<>();
-      filesSummaryForChart.put(CHART_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
-      filesSummaryForChart.put(CHART_DELETE_FILES, String.valueOf(summary.getTotalDeletionFiles()));
-      filesSummaryForChart.put(CHART_TOTAL_FILES, String.valueOf(totalFileCount));
-      snapshot.setFilesSummaryForChart(filesSummaryForChart);
+        Map<String, String> filesSummaryForChart = new HashMap<>();
+        filesSummaryForChart.put(CHART_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
+        filesSummaryForChart.put(
+            CHART_DELETE_FILES, String.valueOf(summary.getTotalDeletionFiles()));
+        filesSummaryForChart.put(CHART_TOTAL_FILES, String.valueOf(totalFileCount));
+        snapshot.setFilesSummaryForChart(filesSummaryForChart);
 
-      snapshots.add(snapshot);
+        snapshots.add(snapshot);
+      }
+      LOG.info(
+          "getSnapshots cost: table={}, snapshots={}, elapsed={}ms",
+          amoroTable.id(),
+          snapshots.size(),
+          System.currentTimeMillis() - start);
+      return snapshots;
+    } finally {
+      closeDataset(dataset);
     }
-    LOG.info(
-        "getSnapshots cost: table={}, snapshots={}, elapsed={}ms",
-        amoroTable.id(),
-        snapshots.size(),
-        System.currentTimeMillis() - start);
-    return snapshots;
   }
 
   @Override
@@ -282,6 +290,8 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       }
     } catch (NumberFormatException e) {
       // Failed to parse snapshotId; return an empty list
+    } finally {
+      closeDataset(dataset);
     }
 
     return new ArrayList<>();
@@ -300,39 +310,42 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       return Collections.emptyList();
     }
     Dataset dataset = getDataset(amoroTable);
+    try {
+      Version currentVersion = dataset.getVersion();
+      long commitTime =
+          currentVersion.getDataTime() != null
+              ? currentVersion.getDataTime().toInstant().toEpochMilli()
+              : 0L;
 
-    Version currentVersion = dataset.getVersion();
-    long commitTime =
-        currentVersion.getDataTime() != null
-            ? currentVersion.getDataTime().toInstant().toEpochMilli()
-            : 0L;
+      List<PartitionBaseInfo> partitions = new ArrayList<>();
+      for (Fragment fragment : dataset.getFragments()) {
+        FragmentMetadata metadata = fragment.metadata();
+        String partitionName = buildFragmentPartitionName(metadata.getId());
 
-    List<PartitionBaseInfo> partitions = new ArrayList<>();
-    for (Fragment fragment : dataset.getFragments()) {
-      FragmentMetadata metadata = fragment.metadata();
-      String partitionName = buildFragmentPartitionName(metadata.getId());
+        int fileCount = 0;
+        long fileSize = 0L;
 
-      int fileCount = 0;
-      long fileSize = 0L;
-
-      // Count DataFiles
-      if (metadata.getFiles() != null) {
-        fileCount += metadata.getFiles().size();
-        for (DataFile dataFile : metadata.getFiles()) {
-          if (dataFile.getFileSizeBytes() != null) {
-            fileSize += dataFile.getFileSizeBytes();
+        // Count DataFiles
+        if (metadata.getFiles() != null) {
+          fileCount += metadata.getFiles().size();
+          for (DataFile dataFile : metadata.getFiles()) {
+            if (dataFile.getFileSizeBytes() != null) {
+              fileSize += dataFile.getFileSizeBytes();
+            }
           }
         }
-      }
 
-      // Count DeletionFile
-      if (metadata.getDeletionFile() != null) {
-        fileCount += 1;
-      }
+        // Count DeletionFile
+        if (metadata.getDeletionFile() != null) {
+          fileCount += 1;
+        }
 
-      partitions.add(new PartitionBaseInfo(partitionName, 0, fileCount, fileSize, commitTime));
+        partitions.add(new PartitionBaseInfo(partitionName, 0, fileCount, fileSize, commitTime));
+      }
+      return partitions;
+    } finally {
+      closeDataset(dataset);
     }
-    return partitions;
   }
 
   @Override
@@ -343,25 +356,28 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       return Collections.emptyList();
     }
     Dataset dataset = getDataset(amoroTable);
+    try {
+      Version currentVersion = dataset.getVersion();
+      long commitTime =
+          currentVersion.getDataTime() != null
+              ? currentVersion.getDataTime().toInstant().toEpochMilli()
+              : 0L;
+      String versionId = String.valueOf(currentVersion.getId());
 
-    Version currentVersion = dataset.getVersion();
-    long commitTime =
-        currentVersion.getDataTime() != null
-            ? currentVersion.getDataTime().toInstant().toEpochMilli()
-            : 0L;
-    String versionId = String.valueOf(currentVersion.getId());
+      List<Fragment> fragments = dataset.getFragments();
 
-    List<Fragment> fragments = dataset.getFragments();
+      // Filter the specified Fragment by the partition argument (format "fragment-{id}")
+      if (partition != null && !partition.isEmpty() && !"null".equals(partition)) {
+        fragments =
+            fragments.stream()
+                .filter(f -> buildFragmentPartitionName(f.metadata().getId()).equals(partition))
+                .collect(Collectors.toList());
+      }
 
-    // Filter the specified Fragment by the partition argument (format "fragment-{id}")
-    if (partition != null && !partition.isEmpty() && !"null".equals(partition)) {
-      fragments =
-          fragments.stream()
-              .filter(f -> buildFragmentPartitionName(f.metadata().getId()).equals(partition))
-              .collect(Collectors.toList());
+      return collectFragmentFiles(fragments, versionId, commitTime);
+    } finally {
+      closeDataset(dataset);
     }
-
-    return collectFragmentFiles(fragments, versionId, commitTime);
   }
 
   @Override
@@ -421,6 +437,8 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       }
     } catch (Exception e) {
       // If fetching tags fails, return an empty list
+    } finally {
+      closeDataset(dataset);
     }
 
     return tagInfos;
@@ -458,6 +476,8 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
       }
     } catch (Exception e) {
       // If fetching branches fails, only the main branch is returned
+    } finally {
+      closeDataset(dataset);
     }
 
     return branchInfos;
@@ -542,6 +562,26 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
 
   private Dataset getDataset(AmoroTable<?> amoroTable) {
     return (Dataset) amoroTable.originalTable();
+  }
+
+  /**
+   * Close the Lance Dataset to release ArrowBuf and native memory.
+   *
+   * <p>Lance Dataset is opened without an explicit allocator (see LanceRestCatalog.loadTable /
+   * LanceHiveCatalog.loadTable / LanceDirectoryCatalog.loadTable), so the SDK sets
+   * selfManagedAllocator=true internally. This means Dataset.close() will release all off-heap
+   * memory (ArrowBuf, native pointers) owned by the Dataset. Each loadTable() creates a new
+   * Dataset, so it must be closed after use to avoid memory leak.
+   */
+  private void closeDataset(Dataset dataset) {
+    if (dataset == null) {
+      return;
+    }
+    try {
+      dataset.close();
+    } catch (Exception e) {
+      LOG.warn("Failed to close Lance dataset", e);
+    }
   }
 
   /**

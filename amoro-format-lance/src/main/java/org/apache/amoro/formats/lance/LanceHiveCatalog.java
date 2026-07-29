@@ -514,7 +514,7 @@ public class LanceHiveCatalog implements FormatCatalog {
     try {
       ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
       optionsBuilder.setStorageOptions(mergedStorageOptions);
-      dataset = Dataset.open(lanceLocation, optionsBuilder.build());
+      dataset = Dataset.open().uri(lanceLocation).readOptions(optionsBuilder.build()).build();
 
     } catch (Exception e) {
       String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();

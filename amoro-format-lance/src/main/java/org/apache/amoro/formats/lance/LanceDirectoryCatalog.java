@@ -229,7 +229,7 @@ public class LanceDirectoryCatalog implements FormatCatalog {
     ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
     optionsBuilder.setStorageOptions(storageOptions);
 
-    Dataset dataset = Dataset.open(location, optionsBuilder.build());
+    Dataset dataset = Dataset.open().uri(location).readOptions(optionsBuilder.build()).build();
 
     // Merge the three metadata sources into unified tableProperties
     Map<String, String> mergedProperties = LanceProperties.mergeDatasetMetadata(dataset);
