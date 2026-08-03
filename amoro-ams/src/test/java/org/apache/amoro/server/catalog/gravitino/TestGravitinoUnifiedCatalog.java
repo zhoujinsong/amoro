@@ -510,4 +510,116 @@ public class TestGravitinoUnifiedCatalog {
     assertTrue(GravitinoUnifiedCatalogProperties.extractHeaders(props).isEmpty());
     assertTrue(GravitinoUnifiedCatalogProperties.extractHeaders(null).isEmpty());
   }
+
+  // -----------------------------------------------------------------------------------------
+  // Metadata caching
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  public void testCatalogObjectCachedAcrossCalls() {
+    when(schemas.listSchemas()).thenReturn(new String[] {"db1"});
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    // Construction already triggered one loadCatalog (initializeDataPlaneEngines ->
+    // loadCatalogProperties). Subsequent discovery calls must hit the catalog cache.
+    catalog.listDatabases();
+    catalog.listDatabases();
+
+    verify(client, times(1)).loadCatalog(anyString());
+  }
+
+  @Test
+  public void testFormatCacheAvoidsRepeatedLoadTable() {
+    stubTable("db1", "t1", "iceberg");
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    catalog.loadTableFormat("db1", "t1");
+    catalog.loadTableFormat("db1", "t1");
+
+    verify(tableCatalog, times(1)).loadTable(NameIdentifier.of(Namespace.of("db1"), "t1"));
+  }
+
+  @Test
+  public void testFormatNegativeCacheAvoidsRepeatedProbe() {
+    // Default mock returns a table with null format for any loadTable.
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    assertFalse(catalog.tableExists("db1", "missing"));
+    assertFalse(catalog.tableExists("db1", "missing"));
+
+    verify(tableCatalog, times(1)).loadTable(NameIdentifier.of(Namespace.of("db1"), "missing"));
+  }
+
+  @Test
+  public void testListTablesNotCached() {
+    // listTables is intentionally NOT cached (frequency scales with database count, not table
+    // count, and the sync cycle already bounds it). Each call must hit Gravitino.
+    stubTableNames("db1", "t1", "t2");
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    catalog.listTableIdentifiers("db1");
+    catalog.listTableIdentifiers("db1");
+
+    verify(tableCatalog, times(2)).listTables(Namespace.of("db1"));
+  }
+
+  @Test
+  public void testDropTableInvalidatesFormatCache() {
+    stubTable("db1", "t1", "iceberg");
+    Map<String, String> extra = Maps.newHashMap();
+    extra.put(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI, "http://host:9001/iceberg/");
+    GravitinoUnifiedCatalog catalog = newCatalog(extra);
+
+    catalog.loadTableFormat("db1", "t1"); // fill cache
+    assertTrue(catalog.dropTable("db1", "t1", false)); // invalidate entry
+    catalog.loadTableFormat("db1", "t1"); // cache miss -> reload
+
+    verify(tableCatalog, times(2)).loadTable(NameIdentifier.of(Namespace.of("db1"), "t1"));
+  }
+
+  @Test
+  public void testRefreshInvalidatesFormatCache() {
+    stubTable("db1", "t1", "iceberg");
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    catalog.loadTableFormat("db1", "t1"); // fill cache
+    catalog.refresh(); // metaSupplier==null -> clears caches only
+    catalog.loadTableFormat("db1", "t1"); // cache miss -> reload
+
+    verify(tableCatalog, times(2)).loadTable(NameIdentifier.of(Namespace.of("db1"), "t1"));
+  }
+
+  @Test
+  public void testCacheDisabledBypassesFormatCache() {
+    stubTable("db1", "t1", "iceberg");
+    Map<String, String> extra = Maps.newHashMap();
+    extra.put(GravitinoUnifiedCatalogProperties.CACHE_ENABLED, "false");
+    GravitinoUnifiedCatalog catalog = newCatalog(extra);
+
+    catalog.loadTableFormat("db1", "t1");
+    catalog.loadTableFormat("db1", "t1");
+
+    verify(tableCatalog, times(2)).loadTable(NameIdentifier.of(Namespace.of("db1"), "t1"));
+  }
+
+  @Test
+  public void testCacheDisabledPropertyDefaultsToEnabled() {
+    // No explicit cache config -> enabled by default; format is cached.
+    stubTable("db1", "t1", "iceberg");
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    catalog.loadTableFormat("db1", "t1");
+    catalog.loadTableFormat("db1", "t1");
+
+    verify(tableCatalog, times(1)).loadTable(NameIdentifier.of(Namespace.of("db1"), "t1"));
+  }
+
+  @Test
+  public void testCacheConfigParsingDefaults() {
+    Map<String, String> empty = Maps.newHashMap();
+    assertTrue(GravitinoUnifiedCatalogProperties.cacheEnabled(empty));
+    assertEquals(
+        GravitinoUnifiedCatalogProperties.DEFAULT_FORMAT_CACHE_TTL_MIN,
+        GravitinoUnifiedCatalogProperties.formatCacheTtlMin(empty));
+  }
 }

@@ -23,6 +23,8 @@ import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogP
 import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.LANCE_REST_URI;
 import static org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties.WAREHOUSE;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.apache.amoro.AmoroTable;
 import org.apache.amoro.FormatCatalog;
 import org.apache.amoro.FormatCatalogFactory;
@@ -60,6 +62,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -90,6 +93,12 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
 
   /** format -&gt; data-plane {@link FormatCatalog}, lazily (re)built by {@link #refresh()}. */
   private volatile Map<TableFormat, FormatCatalog> dataPlaneEngines = Maps.newHashMap();
+
+  private volatile boolean cacheEnabled = true;
+
+  private volatile Catalog cachedCatalog;
+
+  private Cache<String, Optional<String>> tableFormatCache;
 
   /** Constructor used when the catalog is refreshable from a live {@link CatalogMeta} source. */
   public GravitinoUnifiedCatalog(
@@ -133,6 +142,7 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     this.gravitinoCatalogName = mc.second();
     this.allowedFormats =
         CatalogUtil.tableFormats(CatalogMetaProperties.CATALOG_TYPE_GRAVITINO, properties);
+    initCaches(properties);
     initializeDataPlaneEngines();
   }
 
@@ -145,7 +155,41 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     this.client = buildClient(uri, metalake, catalogProperties);
     this.allowedFormats =
         CatalogUtil.tableFormats(CatalogMetaProperties.CATALOG_TYPE_GRAVITINO, catalogProperties);
+    initCaches(catalogProperties);
     initializeDataPlaneEngines();
+  }
+
+  private void initCaches(Map<String, String> properties) {
+    this.cacheEnabled = GravitinoUnifiedCatalogProperties.cacheEnabled(properties);
+    this.tableFormatCache =
+        Caffeine.newBuilder()
+            .expireAfterWrite(
+                GravitinoUnifiedCatalogProperties.formatCacheTtlMin(properties), TimeUnit.MINUTES)
+            .maximumSize(GravitinoUnifiedCatalogProperties.formatCacheMaxSize(properties))
+            .build();
+    this.cachedCatalog = null;
+    LOG.info(
+        "Initialized Gravitino metadata caches for {}.{}: enabled={}, catalogCache=permanent, "
+            + "formatTtlMin={}",
+        metalake,
+        gravitinoCatalogName,
+        cacheEnabled,
+        GravitinoUnifiedCatalogProperties.formatCacheTtlMin(properties));
+  }
+
+  /** Clears all cached metadata. Called from {@link #refresh()} and on demand. */
+  private synchronized void invalidateCaches() {
+    this.cachedCatalog = null;
+    if (tableFormatCache != null) {
+      tableFormatCache.invalidateAll();
+    }
+  }
+
+  /** Invalidates the cached format entry for a single table. */
+  private void invalidateTableCacheEntry(String database, String table) {
+    if (tableFormatCache != null) {
+      tableFormatCache.invalidate(database + "." + table);
+    }
   }
 
   private static GravitinoClient buildClient(
@@ -351,7 +395,19 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
   }
 
   private Catalog gravitinoCatalog() {
-    return client.loadCatalog(gravitinoCatalogName);
+    if (!cacheEnabled) {
+      return client.loadCatalog(gravitinoCatalogName);
+    }
+    Catalog c = cachedCatalog;
+    if (c != null) {
+      return c;
+    }
+    synchronized (this) {
+      if (cachedCatalog == null) {
+        cachedCatalog = client.loadCatalog(gravitinoCatalogName);
+      }
+      return cachedCatalog;
+    }
   }
 
   private List<String> listTableNames(String schema) {
@@ -369,6 +425,13 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
   }
 
   private Optional<String> describeTableFormat(String schema, String table) {
+    if (!cacheEnabled) {
+      return doDescribeTableFormat(schema, table);
+    }
+    return tableFormatCache.get(schema + "." + table, k -> doDescribeTableFormat(schema, table));
+  }
+
+  private Optional<String> doDescribeTableFormat(String schema, String table) {
     try {
       Table loaded =
           gravitinoCatalog()
@@ -456,7 +519,11 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     try {
       TableFormat format = loadTableFormat(database, table);
       FormatCatalog engine = dataPlaneEngines.get(format);
-      return engine != null && engine.dropTable(database, table, purge);
+      boolean dropped = engine != null && engine.dropTable(database, table, purge);
+      if (dropped) {
+        invalidateTableCacheEntry(database, table);
+      }
+      return dropped;
     } catch (NoSuchTableException e) {
       return false;
     }
@@ -535,6 +602,7 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
 
   @Override
   public synchronized void refresh() {
+    invalidateCaches();
     if (metaSupplier == null) {
       return;
     }

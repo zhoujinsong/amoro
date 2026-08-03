@@ -44,6 +44,11 @@
             <artifactId>amoro-shade-guava-32</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Lance format dependencies would go here -->
         <dependency>
             <groupId>org.lance</groupId>

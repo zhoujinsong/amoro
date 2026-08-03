@@ -18,6 +18,8 @@
 
 package org.apache.amoro.formats.lance;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.apache.amoro.AlreadyExistsException;
 import org.apache.amoro.AmoroTable;
 import org.apache.amoro.DatabaseNotEmptyException;
@@ -26,6 +28,7 @@ import org.apache.amoro.NoSuchDatabaseException;
 import org.apache.amoro.NoSuchTableException;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableIdentifier;
+import org.apache.amoro.utils.PropertyUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.lance.Dataset;
 import org.lance.ReadOptions;
@@ -56,6 +59,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Lance format catalog implementation backed by a REST-based namespace.
@@ -89,6 +93,21 @@ public class LanceRestCatalog implements FormatCatalog {
   private final Map<String, String> properties;
   private final String catalogName;
 
+  private static final String CACHE_ENABLED = "cache.enabled";
+  private static final boolean CACHE_ENABLED_DEFAULT = true;
+
+  private static final String CACHE_DESCRIBE_TTL_MIN = "cache.describe-ttl-min";
+
+  private static final String CACHE_DESCRIBE_MAX_SIZE = "cache.describe-max-size";
+
+  private static final long CACHE_DESCRIBE_TTL_MIN_DEFAULT = 10L;
+
+  private static final long CACHE_DESCRIBE_MAX_SIZE_DEFAULT = 10_000L;
+
+  private final boolean cacheEnabled;
+
+  private final Cache<String, DescribeTableResponse> describeTableCache;
+
   /**
    * Create a new LanceRestCatalog instance.
    *
@@ -108,7 +127,26 @@ public class LanceRestCatalog implements FormatCatalog {
               + REST_CATALOG_NAME
               + "' at the catalog level) to address the remote REST catalog.");
     }
-    LOG.info("Initialized LanceRestCatalog, remote catalog name={}", catalogName);
+    this.cacheEnabled =
+        PropertyUtil.propertyAsBoolean(properties, CACHE_ENABLED, CACHE_ENABLED_DEFAULT);
+    long ttlMin =
+        PropertyUtil.propertyAsLong(
+            properties, CACHE_DESCRIBE_TTL_MIN, CACHE_DESCRIBE_TTL_MIN_DEFAULT);
+    long maxSize =
+        PropertyUtil.propertyAsLong(
+            properties, CACHE_DESCRIBE_MAX_SIZE, CACHE_DESCRIBE_MAX_SIZE_DEFAULT);
+    this.describeTableCache =
+        Caffeine.newBuilder()
+            .expireAfterWrite(ttlMin, TimeUnit.MINUTES)
+            .maximumSize(maxSize)
+            .build();
+    LOG.info(
+        "Initialized LanceRestCatalog, remote catalog name={}, describeTableCache enabled={} "
+            + "ttlMin={} maxSize={}",
+        catalogName,
+        cacheEnabled,
+        ttlMin,
+        maxSize);
   }
 
   /** Namespace id for listing databases under the catalog: {@code [catalog]}. */
@@ -249,17 +287,15 @@ public class LanceRestCatalog implements FormatCatalog {
 
   @Override
   public AmoroTable<?> loadTable(String database, String table) {
-    if (!databaseExists(database)) {
-      throw new NoSuchDatabaseException("Database does not exist: " + database);
-    }
-
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(tableId(database, table));
     DescribeTableResponse response;
-    try {
-      response = restNamespace.describeTable(request);
-    } catch (TableNotFoundException e) {
-      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    if (cacheEnabled) {
+      response =
+          describeTableCache.get(
+              database + "." + table, k -> doDescribeTable(request, database, table));
+    } else {
+      response = doDescribeTable(request, database, table);
     }
 
     String location = response.getLocation();
@@ -319,6 +355,18 @@ public class LanceRestCatalog implements FormatCatalog {
     } catch (TableNotFoundException e) {
       throw new NoSuchTableException("Table does not exist: " + database + "." + table);
     }
+    describeTableCache.invalidate(database + "." + table);
     return true;
+  }
+
+  private DescribeTableResponse doDescribeTable(
+      DescribeTableRequest request, String database, String table) {
+    try {
+      return restNamespace.describeTable(request);
+    } catch (TableNotFoundException e) {
+      throw new NoSuchTableException("Table does not exist: " + database + "." + table);
+    } catch (NamespaceNotFoundException e) {
+      throw new NoSuchDatabaseException("Database does not exist: " + database);
+    }
   }
 }

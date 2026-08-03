@@ -45,6 +45,8 @@ import org.lance.namespace.errors.TableNotFoundException;
 import org.lance.namespace.model.CreateNamespaceRequest;
 import org.lance.namespace.model.DescribeNamespaceRequest;
 import org.lance.namespace.model.DescribeNamespaceResponse;
+import org.lance.namespace.model.DescribeTableRequest;
+import org.lance.namespace.model.DescribeTableResponse;
 import org.lance.namespace.model.DropNamespaceRequest;
 import org.lance.namespace.model.DropTableRequest;
 import org.lance.namespace.model.ListNamespacesRequest;
@@ -340,6 +342,83 @@ public class TestLanceRestCatalogMock {
     when(mockNamespace.listTables(any(ListTablesRequest.class))).thenReturn(listTablesResponse);
 
     assertThrows(DatabaseNotEmptyException.class, () -> catalog.dropDatabase(TEST_DATABASE));
+  }
+
+  // ==================== loadTable Tests ====================
+
+  @Test
+  public void testLoadTableDatabaseNotExists() {
+    // describeTable throws NamespaceNotFoundException when the database does not exist; loadTable
+    // must convert it to NoSuchDatabaseException without a prior namespaceExists probe.
+    when(mockNamespace.describeTable(any(DescribeTableRequest.class)))
+        .thenThrow(new NamespaceNotFoundException("not found"));
+
+    assertThrows(
+        NoSuchDatabaseException.class, () -> catalog.loadTable("non_existent_db", TEST_TABLE));
+    verify(mockNamespace, never()).namespaceExists(any(NamespaceExistsRequest.class));
+  }
+
+  @Test
+  public void testLoadTableTableNotExists() {
+    when(mockNamespace.describeTable(any(DescribeTableRequest.class)))
+        .thenThrow(new TableNotFoundException("not found"));
+
+    assertThrows(
+        NoSuchTableException.class, () -> catalog.loadTable(TEST_DATABASE, "non_existent_table"));
+  }
+
+  @Test
+  public void testLoadTableCachesDescribeTableResponse() {
+    // describeTable returns a valid response; Dataset.open fails natively in the mock env, but
+    // the response is cached before that, so the second loadTable must not call describeTable.
+    DescribeTableResponse response = mock(DescribeTableResponse.class);
+    when(response.getLocation()).thenReturn("cos://bucket/path");
+    when(response.getStorageOptions()).thenReturn(null);
+    when(mockNamespace.describeTable(any(DescribeTableRequest.class))).thenReturn(response);
+
+    invokeLoadTableIgnoringDatasetFailure(catalog, TEST_DATABASE, TEST_TABLE);
+    invokeLoadTableIgnoringDatasetFailure(catalog, TEST_DATABASE, TEST_TABLE);
+
+    verify(mockNamespace, times(1)).describeTable(any(DescribeTableRequest.class));
+  }
+
+  @Test
+  public void testDropTableInvalidatesDescribeCache() {
+    DescribeTableResponse response = mock(DescribeTableResponse.class);
+    when(response.getLocation()).thenReturn("cos://bucket/path");
+    when(response.getStorageOptions()).thenReturn(null);
+    when(mockNamespace.describeTable(any(DescribeTableRequest.class))).thenReturn(response);
+
+    invokeLoadTableIgnoringDatasetFailure(catalog, TEST_DATABASE, TEST_TABLE); // fill cache
+    assertTrue(catalog.dropTable(TEST_DATABASE, TEST_TABLE, true)); // invalidate
+    invokeLoadTableIgnoringDatasetFailure(catalog, TEST_DATABASE, TEST_TABLE); // miss -> reload
+
+    verify(mockNamespace, times(2)).describeTable(any(DescribeTableRequest.class));
+  }
+
+  @Test
+  public void testDescribeCacheDisabledBypasses() {
+    properties.put("cache.enabled", "false");
+    LanceRestCatalog noCacheCatalog = new LanceRestCatalog(mockNamespace, properties);
+    DescribeTableResponse response = mock(DescribeTableResponse.class);
+    when(response.getLocation()).thenReturn("cos://bucket/path");
+    when(response.getStorageOptions()).thenReturn(null);
+    when(mockNamespace.describeTable(any(DescribeTableRequest.class))).thenReturn(response);
+
+    invokeLoadTableIgnoringDatasetFailure(noCacheCatalog, TEST_DATABASE, TEST_TABLE);
+    invokeLoadTableIgnoringDatasetFailure(noCacheCatalog, TEST_DATABASE, TEST_TABLE);
+
+    verify(mockNamespace, times(2)).describeTable(any(DescribeTableRequest.class));
+  }
+
+  /** Invokes loadTable, swallowing the Dataset.open native failure expected in the mock env. */
+  private void invokeLoadTableIgnoringDatasetFailure(
+      LanceRestCatalog cat, String database, String table) {
+    try {
+      cat.loadTable(database, table);
+    } catch (Throwable expected) {
+      // Dataset.open native failure is expected; we only assert describeTable call counts.
+    }
   }
 
   // ==================== dropTable Tests ====================
