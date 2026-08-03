@@ -19,6 +19,7 @@
 package org.apache.amoro.server.catalog.gravitino;
 
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
+import org.apache.amoro.utils.PropertyUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.util.Pair;
 
@@ -115,5 +116,33 @@ public class GravitinoUnifiedCatalogProperties {
     } catch (IllegalArgumentException e) {
       return null;
     }
+  }
+
+  // ======================== Metadata Caching ========================
+
+  public static final String CACHE_ENABLED = "gravitino.cache.enabled";
+
+  public static final boolean CACHE_ENABLED_DEFAULT = true;
+
+  public static final String CACHE_FORMAT_TTL_MIN = "gravitino.cache.format-ttl-min";
+
+  public static final long DEFAULT_FORMAT_CACHE_TTL_MIN = 30L;
+
+  public static final String CACHE_FORMAT_MAX_SIZE = "gravitino.cache.format-max-size";
+
+  public static final long DEFAULT_FORMAT_CACHE_MAX_SIZE = 50_000L;
+
+  public static boolean cacheEnabled(Map<String, String> properties) {
+    return PropertyUtil.propertyAsBoolean(properties, CACHE_ENABLED, CACHE_ENABLED_DEFAULT);
+  }
+
+  public static long formatCacheTtlMin(Map<String, String> properties) {
+    return PropertyUtil.propertyAsLong(
+        properties, CACHE_FORMAT_TTL_MIN, DEFAULT_FORMAT_CACHE_TTL_MIN);
+  }
+
+  public static long formatCacheMaxSize(Map<String, String> properties) {
+    return PropertyUtil.propertyAsLong(
+        properties, CACHE_FORMAT_MAX_SIZE, DEFAULT_FORMAT_CACHE_MAX_SIZE);
   }
 }
