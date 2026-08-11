@@ -97,10 +97,11 @@ public class OptimizedCommonUnifiedCatalog extends CommonUnifiedCatalog {
     FormatCatalog formatCatalog = formatCatalogs.get(TableFormat.HIVE_V2);
     AmoroTable<?> amoroTable = formatCatalog.loadTable(database, table);
     // TODO: support more table formats
-    if (CatalogUtil.isMixedTableFormat(amoroTable.properties())) {
-      return TableFormat.MIXED_ICEBERG;
-    } else if (CatalogUtil.isTciTableFormat(amoroTable.properties())) {
+    // TCI before MIXED/ICEBERG: TCI tables are Iceberg-backed with table-format=TCI.
+    if (CatalogUtil.isTciTableFormat(amoroTable.properties())) {
       return TableFormat.TCI;
+    } else if (CatalogUtil.isMixedTableFormat(amoroTable.properties())) {
+      return TableFormat.MIXED_ICEBERG;
     } else if (CatalogUtil.isIcebergTableFormat(amoroTable.properties())) {
       return TableFormat.ICEBERG;
     } else if (CatalogUtil.isHoodieTableFormat(amoroTable.properties())) {

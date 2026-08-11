@@ -72,12 +72,16 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   public static final String CATALOG_REGISTER_NAME = "register-name";
   public static final String SPARK_HIVE_STORED_AS = "hive.stored-as";
   private static final Map<TableFormat, String> defaultTableCatalogImplMap =
-      ImmutableMap.of(
-          TableFormat.ICEBERG, "org.apache.iceberg.spark.SparkCatalog",
-          TableFormat.HIVE_V2, "org.apache.kyuubi.spark.connector.hive.HiveTableCatalog",
-          TableFormat.MIXED_HIVE, "org.apache.amoro.spark.MixedFormatSparkCatalog",
-          TableFormat.MIXED_ICEBERG, "org.apache.amoro.spark.MixedFormatSparkCatalog",
-          TableFormat.PAIMON, "org.apache.paimon.spark.SparkCatalog");
+      ImmutableMap.<TableFormat, String>builder()
+          .put(TableFormat.ICEBERG, "org.apache.iceberg.spark.SparkCatalog")
+          .put(TableFormat.HIVE_V2, "org.apache.kyuubi.spark.connector.hive.HiveTableCatalog")
+          .put(TableFormat.MIXED_HIVE, "org.apache.amoro.spark.MixedFormatSparkCatalog")
+          .put(TableFormat.MIXED_ICEBERG, "org.apache.amoro.spark.MixedFormatSparkCatalog")
+          .put(TableFormat.PAIMON, "org.apache.paimon.spark.SparkCatalog")
+          // Offline default only. Override with catalog property tci.spark-catalog-impl for DLC
+          // or other engines. Amoro does not compile against spark-tci-stream.
+          .put(TableFormat.TCI, "com.tencent.cloud.tci_stream.spark.SparkCatalog")
+          .build();
 
   private static final String[] DEFAULT_NAMESPACE = new String[] {"default"};
 
@@ -319,6 +323,8 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
       throw new IllegalArgumentException(
           "table file format {" + fileFormat + "} is not supported.");
     }
+    // Product TCI DDL goes through Gravitino REST; Amoro only routes TCI I/O.
+    rejectTciDdl(format);
     TableCatalog catalog = tableCatalog(format);
     return catalog.createTable(ident, schema, partitions, properties);
   }
@@ -328,6 +334,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
     try {
       TableFormat tableFormat =
           unifiedCatalog.loadTableFormat(namespaceToDatabase(ident.namespace()), ident.name());
+      rejectTciDdl(tableFormat);
       return tableCatalog(tableFormat).alterTable(ident, changes);
     } catch (org.apache.amoro.NoSuchTableException e) {
       throw new NoSuchTableException(ident);
@@ -337,12 +344,14 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   @Override
   public boolean dropTable(Identifier ident) {
     String database = namespaceToDatabase(ident.namespace());
+    rejectTciDdlIfExists(database, ident.name());
     return unifiedCatalog.dropTable(database, ident.name(), false);
   }
 
   @Override
   public boolean purgeTable(Identifier ident) throws UnsupportedOperationException {
     String database = namespaceToDatabase(ident.namespace());
+    rejectTciDdlIfExists(database, ident.name());
     return unifiedCatalog.dropTable(database, ident.name(), true);
   }
 
@@ -352,8 +361,24 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
     String database = namespaceToDatabase(oldIdent.namespace());
     String tableName = oldIdent.name();
     TableFormat format = unifiedCatalog.loadTableFormat(database, tableName);
+    rejectTciDdl(format);
     TableCatalog catalog = tableCatalog(format);
     catalog.renameTable(oldIdent, newIdent);
+  }
+
+  private static void rejectTciDdl(TableFormat format) {
+    if (TableFormat.TCI.equals(format)) {
+      throw new UnsupportedOperationException(
+          "TCI DDL must go through Gravitino; Amoro only routes TCI I/O");
+    }
+  }
+
+  private void rejectTciDdlIfExists(String database, String table) {
+    try {
+      rejectTciDdl(unifiedCatalog.loadTableFormat(database, table));
+    } catch (org.apache.amoro.NoSuchTableException e) {
+      // drop of missing table falls through to unifiedCatalog
+    }
   }
 
   @Override
@@ -368,6 +393,7 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
   }
 
   private TableCatalog initializeTableCatalog(TableFormat format) {
+    // Per-format override, e.g. tci.spark-catalog-impl for TableFormat.TCI.
     String catalogOptions = format.name().toLowerCase().replace("_", "-") + ".spark-catalog-impl";
     String impl = unifiedCatalog.properties().get(catalogOptions);
     if (StringUtils.isBlank(impl)) {
@@ -375,7 +401,11 @@ public class SparkUnifiedCatalogBase implements TableCatalog, SupportsNamespaces
     }
     if (StringUtils.isBlank(impl)) {
       throw new IllegalStateException(
-          "Failed to initialize spark TableCatalog for format:" + format.name());
+          "Failed to initialize spark TableCatalog for format:"
+              + format.name()
+              + ". Set catalog property '"
+              + catalogOptions
+              + "' to a TableCatalog implementation.");
     }
     ServiceLoader<FormatCatalogFactory> loader = ServiceLoader.load(FormatCatalogFactory.class);
     FormatCatalogFactory formatCatalogFactory = null;
