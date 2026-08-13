@@ -34,6 +34,8 @@ import org.apache.amoro.server.utils.IcebergTableUtil;
 import org.apache.amoro.shade.guava32.com.google.common.base.Preconditions;
 import org.apache.amoro.table.MixedTable;
 
+import java.lang.reflect.Method;
+
 /** Executor that refreshes table runtimes and evaluates optimizing status periodically. */
 public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
 
@@ -114,16 +116,19 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
 
   @Override
   public void execute(TableRuntime tableRuntime) {
+    AmoroTable<?> table = null;
+    boolean isLanceTable = false;
     try {
       Preconditions.checkArgument(tableRuntime instanceof DefaultTableRuntime);
       DefaultTableRuntime defaultTableRuntime = (DefaultTableRuntime) tableRuntime;
 
       DefaultOptimizingState optimizingState = defaultTableRuntime.getOptimizingState();
-      AmoroTable<?> table = loadTable(tableRuntime);
+      table = loadTable(tableRuntime);
 
       // Lance tables go through a separate refresh path and do not participate in optimizing
       // evaluation
       if (TableFormat.LANCE.equals(table.format())) {
+        isLanceTable = true;
         executeLanceRefresh(defaultTableRuntime, optimizingState, table);
         return;
       }
@@ -143,6 +148,14 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
       }
     } catch (Throwable throwable) {
       logger.error("Refreshing table {} failed.", tableRuntime.getTableIdentifier(), throwable);
+    } finally {
+      // Lance Dataset (org.lance.Dataset implements Closeable) holds ArrowBuf and native memory
+      // that are not reclaimed by GC. Dataset is opened without an explicit allocator, so
+      // selfManagedAllocator=true and Dataset.close() releases all off-heap memory. Each
+      // loadTable() creates a new Dataset, so it must be closed after use to avoid memory leak.
+      if (isLanceTable && table != null) {
+        closeLanceDataset(table);
+      }
     }
   }
 
@@ -165,7 +178,7 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
         AbstractOptimizingEvaluator.PendingInput emptySummary =
             AbstractOptimizingEvaluator.PendingInput.ofLance(0, 0L, 0L, 0, 0L, 0L);
         optimizingState.setTableSummary(emptySummary);
-        logger.info(
+        logger.debug(
             "Refreshed Lance table {} summary with empty placeholder (originalTable is null)",
             tableRuntime.getTableIdentifier());
         return;
@@ -193,7 +206,7 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
               totalDataFileRows,
               totalDeletionFileRows);
       optimizingState.setTableSummary(tableSummary);
-      logger.info(
+      logger.debug(
           "Refreshed Lance table {} summary: dataFiles={}, deletionFiles={}, fileSize={},"
               + " dataRows={}, deletionRows={}, totalRows={}",
           tableRuntime.getTableIdentifier(),
@@ -206,6 +219,29 @@ public class TableRuntimeRefreshExecutor extends PeriodicTableScheduler {
     } catch (Throwable throwable) {
       logger.error(
           "Refreshing Lance table {} failed.", tableRuntime.getTableIdentifier(), throwable);
+    }
+  }
+
+  /**
+   * Close the Lance Dataset to release ArrowBuf and native memory. Called via reflection to avoid a
+   * compile-time dependency on the lance module.
+   *
+   * <p>Lance Dataset is opened without an explicit allocator (see LanceRestCatalog.loadTable /
+   * LanceHiveCatalog.loadTable), so the SDK sets selfManagedAllocator=true internally. This means
+   * Dataset.close() will release all off-heap memory (ArrowBuf, native pointers) owned by the
+   * Dataset. Without this close call, every loadTable() leaks a full Dataset object including its
+   * Arrow Schema (JsonArrowField list) and ArrowBuf instances.
+   */
+  private void closeLanceDataset(AmoroTable<?> table) {
+    Object dataset = table.originalTable();
+    if (dataset == null) {
+      return;
+    }
+    try {
+      Method closeMethod = dataset.getClass().getMethod("close");
+      closeMethod.invoke(dataset);
+    } catch (Exception e) {
+      logger.warn("Failed to close Lance dataset for {}", table.id(), e);
     }
   }
 }

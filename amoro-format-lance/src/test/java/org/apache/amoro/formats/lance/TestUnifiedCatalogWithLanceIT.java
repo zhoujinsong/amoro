@@ -80,18 +80,19 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * CommonUnifiedCatalog 集成测试类，配置同时支持 ICEBERG 和 LANCE 两种表格式。
+ * Integration tests for CommonUnifiedCatalog, configured to support both ICEBERG and LANCE table
+ * formats.
  *
- * <p>本测试类通过 {@link TestHMS}（HMSMockServer）创建真实的 Hive Metastore 环境， 使用 {@link CommonUnifiedCatalog}
- * 统一管理 Iceberg 和 Lance 两种格式的表。
+ * <p>This test class creates a real Hive Metastore environment via {@link TestHMS} (HMSMockServer),
+ * using {@link CommonUnifiedCatalog} to manage both Iceberg and Lance format tables.
  *
- * <p>测试内容：
+ * <p>Test coverage:
  *
  * <ul>
- *   <li>Lance 表的 schema 创建和加载
- *   <li>Iceberg 表的创建和加载
- *   <li>通过 CommonUnifiedCatalog 统一列出不同格式的表
- *   <li>验证 loadTable 能正确识别表格式
+ *   <li>Lance table schema creation and loading
+ *   <li>Iceberg table creation and loading
+ *   <li>Listing tables of different formats via CommonUnifiedCatalog
+ *   <li>Verify loadTable can correctly identify table format
  * </ul>
  */
 public class TestUnifiedCatalogWithLanceIT {
@@ -103,7 +104,7 @@ public class TestUnifiedCatalogWithLanceIT {
   private static final String LANCE_TABLE = "lance_table";
   private static final String ICEBERG_TABLE = "iceberg_table";
 
-  /** Arrow Schema 定义，用于创建 Lance 表 */
+  /** Arrow Schema definition, used for creating Lance tables */
   private static final Schema ARROW_SCHEMA =
       new Schema(
           Arrays.asList(
@@ -111,14 +112,14 @@ public class TestUnifiedCatalogWithLanceIT {
               Field.nullable("name", ArrowType.Utf8.INSTANCE),
               Field.nullable("age", new ArrowType.Int(32, true))));
 
-  /** Iceberg Schema 定义，用于创建 Iceberg 表 */
+  /** Iceberg Schema definition, used for creating Iceberg tables */
   private static final org.apache.iceberg.Schema ICEBERG_SCHEMA =
       new org.apache.iceberg.Schema(
           Types.NestedField.optional(1, "id", Types.LongType.get()),
           Types.NestedField.optional(2, "name", Types.StringType.get()),
           Types.NestedField.optional(3, "age", Types.IntegerType.get()));
 
-  /** 使用 HMSMockServer 模拟 Hive Metastore */
+  /** Use HMSMockServer to simulate Hive Metastore */
   @ClassRule public static TestHMS TEST_HMS = new TestHMS();
 
   @Rule public TemporaryFolder tempFolder = new TemporaryFolder();
@@ -135,7 +136,7 @@ public class TestUnifiedCatalogWithLanceIT {
 
     String hmsUri = TEST_HMS.getHiveConf().get(HiveConf.ConfVars.METASTOREURIS.varname);
 
-    // 构建 catalog 属性，同时支持 ICEBERG 和 LANCE
+    // Build catalog properties supporting both ICEBERG and LANCE
     Map<String, String> catalogProperties = new HashMap<>();
     catalogProperties.put(
         CatalogMetaProperties.TABLE_FORMATS,
@@ -148,11 +149,11 @@ public class TestUnifiedCatalogWithLanceIT {
     catalogProperties.put(CatalogProperties.URI, hmsUri);
     catalogProperties.put(Hive3NamespaceConfig.ROOT, warehouseLocation);
 
-    // 构建 TableMetaStore（包含 HiveConf）
+    // Build TableMetaStore (including HiveConf)
     TableMetaStore tableMetaStore =
         TableMetaStore.builder().withConfiguration(TEST_HMS.getHiveConf()).build();
 
-    // 创建 CommonUnifiedCatalog
+    // Create CommonUnifiedCatalog
     unifiedCatalog =
         new OptimizedCommonUnifiedCatalog(
             CATALOG_NAME,
@@ -160,7 +161,8 @@ public class TestUnifiedCatalogWithLanceIT {
             catalogProperties,
             tableMetaStore);
 
-    // 同时创建一个独立的 LanceHiveCatalog 用于直接创建 Lance 表，与 unifiedCatalog 共享 HiveConf
+    // Also create a standalone LanceHiveCatalog for directly creating Lance tables, sharing
+    // HiveConf with unifiedCatalog
     Hive3Namespace namespace = new Hive3Namespace();
     namespace.setHadoopConf(TEST_HMS.getHiveConf());
     Map<String, String> lanceProperties = new HashMap<>(catalogProperties);
@@ -175,7 +177,7 @@ public class TestUnifiedCatalogWithLanceIT {
 
   @After
   public void tearDown() {
-    // 清理测试创建的数据库和表
+    // Clean up databases and tables created by tests
     try {
       for (String db : unifiedCatalog.listDatabases()) {
         if ("default".equals(db)) {
@@ -187,16 +189,16 @@ public class TestUnifiedCatalogWithLanceIT {
             try {
               unifiedCatalog.dropTable(db, tableId.table(), true);
             } catch (Exception e) {
-              LOG.warn("清理表 {}.{} 失败: {}", db, tableId.table(), e.getMessage());
+              LOG.warn("Failed to clean up table {}.{}: {}", db, tableId.table(), e.getMessage());
             }
           }
           unifiedCatalog.dropDatabase(db);
         } catch (Exception e) {
-          LOG.warn("清理数据库 {} 失败: {}", db, e.getMessage());
+          LOG.warn("Failed to clean up database {}: {}", db, e.getMessage());
         }
       }
     } catch (Exception e) {
-      LOG.warn("清理测试数据失败: {}", e.getMessage());
+      LOG.warn("Failed to clean up test data: {}", e.getMessage());
     }
 
     if (allocator != null) {
@@ -204,17 +206,17 @@ public class TestUnifiedCatalogWithLanceIT {
     }
   }
 
-  // ==================== 基础功能测试 ====================
+  // ==================== Basic Functionality Tests ====================
 
   @Test
   public void testUnifiedCatalogName() {
-    assertEquals("Catalog 名称应匹配", CATALOG_NAME, unifiedCatalog.name());
+    assertEquals("catalog name should match", CATALOG_NAME, unifiedCatalog.name());
   }
 
   @Test
   public void testUnifiedCatalogMetastoreType() {
     assertEquals(
-        "Metastore 类型应为 hive",
+        "metastore type should be hive",
         CatalogMetaProperties.CATALOG_TYPE_HIVE,
         unifiedCatalog.metastoreType());
   }
@@ -224,18 +226,20 @@ public class TestUnifiedCatalogWithLanceIT {
     unifiedCatalog.createDatabase(TEST_DB);
 
     List<String> databases = unifiedCatalog.listDatabases();
-    assertTrue("应包含创建的数据库", databases.contains(TEST_DB));
-    assertTrue("应包含 default 数据库", databases.contains("default"));
+    assertTrue("should contain the created database", databases.contains(TEST_DB));
+    assertTrue("should contain the default database", databases.contains("default"));
   }
 
   @Test
   public void testDatabaseExists() {
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("已创建的数据库应存在", unifiedCatalog.databaseExists(TEST_DB));
-    assertFalse("不存在的数据库应返回 false", unifiedCatalog.databaseExists("non_existent_db"));
+    assertTrue("created database should exist", unifiedCatalog.databaseExists(TEST_DB));
+    assertFalse(
+        "non-existent database should return false",
+        unifiedCatalog.databaseExists("non_existent_db"));
   }
 
-  // ==================== createDatabase 测试 ====================
+  // ==================== createDatabase Tests ====================
 
   @Test
   public void testCreateDatabaseWithMetadata() {
@@ -244,19 +248,24 @@ public class TestUnifiedCatalogWithLanceIT {
     metadata.put("description", "test database with metadata");
     unifiedCatalog.createDatabase(TEST_DB, metadata);
 
-    assertTrue("带 metadata 创建的数据库应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue(
+        "database created with metadata should exist", unifiedCatalog.databaseExists(TEST_DB));
     List<String> databases = unifiedCatalog.listDatabases();
-    assertTrue("listDatabases 应包含带 metadata 创建的数据库", databases.contains(TEST_DB));
+    assertTrue(
+        "listDatabases should contain the database created with metadata",
+        databases.contains(TEST_DB));
   }
 
   @Test
   public void testCreateDuplicateDatabase() {
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("第一次创建数据库应成功", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue("first database creation should succeed", unifiedCatalog.databaseExists(TEST_DB));
 
-    // 重复创建同名数据库应抛出异常
+    // Creating a duplicate database should throw an exception
     org.junit.Assert.assertThrows(
-        "重复创建数据库应抛出异常", Exception.class, () -> unifiedCatalog.createDatabase(TEST_DB));
+        "creating a duplicate database should throw an exception",
+        Exception.class,
+        () -> unifiedCatalog.createDatabase(TEST_DB));
   }
 
   @Test
@@ -270,112 +279,119 @@ public class TestUnifiedCatalogWithLanceIT {
     unifiedCatalog.createDatabase(db3);
 
     List<String> databases = unifiedCatalog.listDatabases();
-    assertTrue("应包含 db1", databases.contains(db1));
-    assertTrue("应包含 db2", databases.contains(db2));
-    assertTrue("应包含 db3", databases.contains(db3));
+    assertTrue("should contain db1", databases.contains(db1));
+    assertTrue("should contain db2", databases.contains(db2));
+    assertTrue("should contain db3", databases.contains(db3));
   }
 
-  // ==================== dropDatabase 测试 ====================
+  // ==================== dropDatabase Tests ====================
 
   @Test
   public void testDropDatabase() {
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("删除前数据库应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue("database should exist before drop", unifiedCatalog.databaseExists(TEST_DB));
 
     unifiedCatalog.dropDatabase(TEST_DB);
-    assertFalse("删除后数据库不应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertFalse("database should not exist after drop", unifiedCatalog.databaseExists(TEST_DB));
   }
 
   @Test
   public void testDropAndRecreateDatabase() {
-    // 创建数据库
+    // Create database
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("创建后数据库应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue("database should exist after creation", unifiedCatalog.databaseExists(TEST_DB));
 
-    // 删除数据库
+    // Drop database
     unifiedCatalog.dropDatabase(TEST_DB);
-    assertFalse("删除后数据库不应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertFalse("database should not exist after drop", unifiedCatalog.databaseExists(TEST_DB));
 
-    // 重新创建同名数据库
+    // Recreate the same database
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("重新创建后数据库应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue("database should exist after recreation", unifiedCatalog.databaseExists(TEST_DB));
   }
 
-  // ==================== listDatabases 测试 ====================
+  // ==================== listDatabases Tests ====================
 
   @Test
   public void testListDatabasesContainsDefault() {
     List<String> databases = unifiedCatalog.listDatabases();
-    assertNotNull("listDatabases 不应返回 null", databases);
-    assertTrue("应包含 default 数据库", databases.contains("default"));
+    assertNotNull("listDatabases should not return null", databases);
+    assertTrue("should contain the default database", databases.contains("default"));
   }
 
   @Test
   public void testListDatabasesAfterCreateAndDrop() {
-    // 初始状态
+    // Initial state
     List<String> initialDatabases = unifiedCatalog.listDatabases();
     int initialSize = initialDatabases.size();
 
-    // 创建数据库后列表应增加
+    // List should grow after creating a database
     unifiedCatalog.createDatabase(TEST_DB);
     List<String> afterCreate = unifiedCatalog.listDatabases();
-    assertEquals("创建数据库后列表大小应增加 1", initialSize + 1, afterCreate.size());
-    assertTrue("列表应包含新创建的数据库", afterCreate.contains(TEST_DB));
+    assertEquals(
+        "list size should increase by 1 after creating a database",
+        initialSize + 1,
+        afterCreate.size());
+    assertTrue("list should contain the newly created database", afterCreate.contains(TEST_DB));
 
-    // 删除数据库后列表应恢复
+    // List should restore after dropping a database
     unifiedCatalog.dropDatabase(TEST_DB);
     List<String> afterDrop = unifiedCatalog.listDatabases();
-    assertEquals("删除数据库后列表大小应恢复", initialSize, afterDrop.size());
-    assertFalse("列表不应包含已删除的数据库", afterDrop.contains(TEST_DB));
+    assertEquals(
+        "list size should restore after dropping a database", initialSize, afterDrop.size());
+    assertFalse("list should not contain the dropped database", afterDrop.contains(TEST_DB));
   }
 
-  // ==================== databaseExists 测试 ====================
+  // ==================== databaseExists Tests ====================
 
   @Test
   public void testDatabaseExistsForDefault() {
-    assertTrue("default 数据库应始终存在", unifiedCatalog.databaseExists("default"));
+    assertTrue("default database should always exist", unifiedCatalog.databaseExists("default"));
   }
 
   @Test
   public void testDatabaseExistsAfterDrop() {
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("创建后 databaseExists 应返回 true", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue(
+        "databaseExists should return true after creation", unifiedCatalog.databaseExists(TEST_DB));
 
     unifiedCatalog.dropDatabase(TEST_DB);
-    assertFalse("删除后 databaseExists 应返回 false", unifiedCatalog.databaseExists(TEST_DB));
+    assertFalse(
+        "databaseExists should return false after drop", unifiedCatalog.databaseExists(TEST_DB));
   }
 
   @Test
   public void testDatabaseExistsWithEmptyName() {
-    assertFalse("空字符串数据库名应返回 false", unifiedCatalog.databaseExists(""));
+    assertFalse(
+        "empty string database name should return false", unifiedCatalog.databaseExists(""));
   }
 
-  // ==================== Lance 表创建和加载测试 ====================
+  // ==================== Lance Table Creation and Loading Tests ====================
 
   @Test
   public void testCreateAndLoadLanceTable() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 通过 LanceHiveCatalog 创建 Lance 表
+    // Create Lance table via LanceHiveCatalog
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + LANCE_TABLE;
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     LanceTable createdTable =
         lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("Lance 表创建不应为 null", createdTable);
+    assertNotNull("created Lance table should not be null", createdTable);
 
-    // 通过 CommonUnifiedCatalog 加载 Lance 表
+    // Load Lance table via CommonUnifiedCatalog
     AmoroTable<?> loadedTable = unifiedCatalog.loadTable(TEST_DB, LANCE_TABLE);
-    assertNotNull("通过 UnifiedCatalog 加载的 Lance 表不应为 null", loadedTable);
-    assertEquals("表格式应为 LANCE", TableFormat.LANCE, loadedTable.format());
-    assertEquals("表名应匹配", LANCE_TABLE, loadedTable.id().getTableName());
-    assertEquals("数据库名应匹配", TEST_DB, loadedTable.id().getDatabase());
+    assertNotNull("Lance table loaded via UnifiedCatalog should not be null", loadedTable);
+    assertEquals("table format should be LANCE", TableFormat.LANCE, loadedTable.format());
+    assertEquals("table name should match", LANCE_TABLE, loadedTable.id().getTableName());
+    assertEquals("database name should match", TEST_DB, loadedTable.id().getDatabase());
   }
 
   @Test
   public void testCreateLanceTableWithSchema() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 创建带有多种字段类型的 Lance 表
+    // Create a Lance table with multiple field types
     Schema complexSchema =
         new Schema(
             Arrays.asList(
@@ -388,13 +404,13 @@ public class TestUnifiedCatalogWithLanceIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "complex_lance_table");
     LanceTable createdTable =
         lanceCatalog.createTable(tableId, tableLocation, complexSchema, new HashMap<>());
-    assertNotNull("复杂 schema 的 Lance 表创建不应为 null", createdTable);
-    assertNotNull("原始 Dataset 不应为 null", createdTable.originalTable());
+    assertNotNull("Lance table with complex schema should not be null", createdTable);
+    assertNotNull("original Dataset should not be null", createdTable.originalTable());
 
-    // 通过 CommonUnifiedCatalog 加载并验证
+    // Load and verify via CommonUnifiedCatalog
     AmoroTable<?> loadedTable = unifiedCatalog.loadTable(TEST_DB, "complex_lance_table");
-    assertNotNull("通过 UnifiedCatalog 加载的表不应为 null", loadedTable);
-    assertEquals("表格式应为 LANCE", TableFormat.LANCE, loadedTable.format());
+    assertNotNull("table loaded via UnifiedCatalog should not be null", loadedTable);
+    assertEquals("table format should be LANCE", TableFormat.LANCE, loadedTable.format());
   }
 
   @Test
@@ -409,12 +425,12 @@ public class TestUnifiedCatalogWithLanceIT {
 
     LanceTable createdTable =
         lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, tableProps);
-    assertNotNull("带属性的 Lance 表创建不应为 null", createdTable);
+    assertNotNull("Lance table with properties should not be null", createdTable);
 
-    // 通过 CommonUnifiedCatalog 加载并验证
+    // Load and verify via CommonUnifiedCatalog
     AmoroTable<?> loadedTable = unifiedCatalog.loadTable(TEST_DB, "prop_lance_table");
-    assertNotNull("通过 UnifiedCatalog 加载的表不应为 null", loadedTable);
-    assertEquals("表格式应为 LANCE", TableFormat.LANCE, loadedTable.format());
+    assertNotNull("table loaded via UnifiedCatalog should not be null", loadedTable);
+    assertEquals("table format should be LANCE", TableFormat.LANCE, loadedTable.format());
   }
 
   @Test
@@ -427,90 +443,96 @@ public class TestUnifiedCatalogWithLanceIT {
     lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, tableProps);
 
     TableFormat format = unifiedCatalog.loadTableFormat(TEST_DB, LANCE_TABLE);
-    assertEquals("应识别为 LANCE 格式", TableFormat.LANCE, format);
+    assertEquals("should be identified as LANCE format", TableFormat.LANCE, format);
   }
 
   @Test
   public void testCreateLanceTableWithoutLocation() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 不传递 location，由 Hive 自动分配
+    // No location provided, let Hive auto-assign
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "auto_loc_lance_table");
     LanceTable createdTable =
         lanceCatalog.createTable(tableId, null, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("不传 location 创建的 Lance 表不应为 null", createdTable);
+    assertNotNull("Lance table created without location should not be null", createdTable);
 
-    // 通过 CommonUnifiedCatalog 加载
+    // Load via CommonUnifiedCatalog
     AmoroTable<?> loadedTable = unifiedCatalog.loadTable(TEST_DB, "auto_loc_lance_table");
-    assertNotNull("通过 UnifiedCatalog 加载的表不应为 null", loadedTable);
-    assertEquals("表格式应为 LANCE", TableFormat.LANCE, loadedTable.format());
+    assertNotNull("table loaded via UnifiedCatalog should not be null", loadedTable);
+    assertEquals("table format should be LANCE", TableFormat.LANCE, loadedTable.format());
   }
 
-  // ==================== Iceberg 表创建和加载测试 ====================
+  // ==================== Iceberg Table Creation and Loading Tests ====================
 
   @Test
   public void testCreateAndLoadIcebergTable() {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 通过 Iceberg Catalog 创建 Iceberg 表
+    // Create Iceberg table via Iceberg Catalog
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    // 通过 CommonUnifiedCatalog 加载 Iceberg 表
+    // Load Iceberg table via CommonUnifiedCatalog
     AmoroTable<?> loadedTable = unifiedCatalog.loadTable(TEST_DB, ICEBERG_TABLE);
-    assertNotNull("通过 UnifiedCatalog 加载的 Iceberg 表不应为 null", loadedTable);
-    assertEquals("表格式应为 ICEBERG", TableFormat.ICEBERG, loadedTable.format());
-    assertEquals("表名应匹配", ICEBERG_TABLE, loadedTable.id().getTableName());
-    assertEquals("数据库名应匹配", TEST_DB, loadedTable.id().getDatabase());
+    assertNotNull("Iceberg table loaded via UnifiedCatalog should not be null", loadedTable);
+    assertEquals("table format should be ICEBERG", TableFormat.ICEBERG, loadedTable.format());
+    assertEquals("table name should match", ICEBERG_TABLE, loadedTable.id().getTableName());
+    assertEquals("database name should match", TEST_DB, loadedTable.id().getDatabase());
   }
 
-  // ==================== 混合格式表列表测试 ====================
+  // ==================== Mixed Format Table Listing Tests ====================
 
   @Test
   public void testListTablesWithMixedFormats() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 创建 Lance 表
+    // Create Lance table
     String lanceLocation = warehouseLocation + "/" + TEST_DB + "/" + LANCE_TABLE;
     TableIdentifier lanceTableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     lanceCatalog.createTable(lanceTableId, lanceLocation, ARROW_SCHEMA, new HashMap<>());
 
-    // 创建 Iceberg 表
+    // Create Iceberg table
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    // 通过 CommonUnifiedCatalog 列出所有表
+    // List all tables via CommonUnifiedCatalog
     List<TableIDWithFormat> tables = unifiedCatalog.listTables(TEST_DB);
-    assertNotNull("表列表不应为 null", tables);
+    assertNotNull("table list should not be null", tables);
 
-    // 验证包含两种格式的表
+    // Verify both format tables are present
     Map<String, TableFormat> tableFormatMap =
         tables.stream()
             .collect(Collectors.toMap(TableIDWithFormat::table, TableIDWithFormat::getTableFormat));
 
-    assertTrue("应包含 Lance 表", tableFormatMap.containsKey(LANCE_TABLE));
-    assertTrue("应包含 Iceberg 表", tableFormatMap.containsKey(ICEBERG_TABLE));
-    assertEquals("Lance 表格式应正确", TableFormat.LANCE, tableFormatMap.get(LANCE_TABLE));
-    assertEquals("Iceberg 表格式应正确", TableFormat.ICEBERG, tableFormatMap.get(ICEBERG_TABLE));
+    assertTrue("should contain Lance table", tableFormatMap.containsKey(LANCE_TABLE));
+    assertTrue("should contain Iceberg table", tableFormatMap.containsKey(ICEBERG_TABLE));
+    assertEquals(
+        "Lance table format should be correct", TableFormat.LANCE, tableFormatMap.get(LANCE_TABLE));
+    assertEquals(
+        "Iceberg table format should be correct",
+        TableFormat.ICEBERG,
+        tableFormatMap.get(ICEBERG_TABLE));
   }
 
   @Test
   public void testTableExistsWithMixedFormats() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 创建 Lance 表
+    // Create Lance table
     String lanceLocation = warehouseLocation + "/" + TEST_DB + "/" + LANCE_TABLE;
     TableIdentifier lanceTableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     lanceCatalog.createTable(lanceTableId, lanceLocation, ARROW_SCHEMA, new HashMap<>());
 
-    // 创建 Iceberg 表
+    // Create Iceberg table
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    // 验证两种格式的表都存在
-    assertTrue("Lance 表应存在", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
-    assertTrue("Iceberg 表应存在", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
-    assertFalse("不存在的表应返回 false", unifiedCatalog.tableExists(TEST_DB, "non_existent_table"));
+    // Verify both format tables exist
+    assertTrue("Lance table should exist", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
+    assertTrue("Iceberg table should exist", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
+    assertFalse(
+        "non-existent table should return false",
+        unifiedCatalog.tableExists(TEST_DB, "non_existent_table"));
   }
 
-  // ==================== 表格式识别测试 ====================
+  // ==================== Table Format Identification Tests ====================
 
   @Test
   public void testLoadTableFormatForLance() throws IOException {
@@ -520,9 +542,9 @@ public class TestUnifiedCatalogWithLanceIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    // 验证 loadTableFormat 能正确识别 Lance 格式
+    // Verify loadTableFormat can correctly identify Lance format
     TableFormat format = unifiedCatalog.loadTableFormat(TEST_DB, LANCE_TABLE);
-    assertEquals("应识别为 LANCE 格式", TableFormat.LANCE, format);
+    assertEquals("should be identified as LANCE format", TableFormat.LANCE, format);
   }
 
   @Test
@@ -530,9 +552,9 @@ public class TestUnifiedCatalogWithLanceIT {
     unifiedCatalog.createDatabase(TEST_DB);
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    // 验证 loadTableFormat 能正确识别 Iceberg 格式
+    // Verify loadTableFormat can correctly identify Iceberg format
     TableFormat format = unifiedCatalog.loadTableFormat(TEST_DB, ICEBERG_TABLE);
-    assertEquals("应识别为 ICEBERG 格式", TableFormat.ICEBERG, format);
+    assertEquals("should be identified as ICEBERG format", TableFormat.ICEBERG, format);
   }
 
   @Test
@@ -547,35 +569,36 @@ public class TestUnifiedCatalogWithLanceIT {
     TEST_HMS.getHiveClient().alter_table(TEST_DB, ICEBERG_TABLE, hiveTable);
 
     TableFormat format = unifiedCatalog.loadTableFormat(TEST_DB, ICEBERG_TABLE);
-    assertEquals("应仍识别为 ICEBERG 格式", TableFormat.ICEBERG, format);
+    assertEquals("should still be identified as ICEBERG format", TableFormat.ICEBERG, format);
   }
 
-  // ==================== 异常测试 ====================
+  // ==================== Exception Tests ====================
 
   @Test
   public void testLoadNonExistentTable() {
     unifiedCatalog.createDatabase(TEST_DB);
 
     assertThrows(
-        "加载不存在的表应抛出 NoSuchTableException",
+        "loading a non-existent table should throw NoSuchTableException",
         NoSuchTableException.class,
         () -> unifiedCatalog.loadTable(TEST_DB, "non_existent_table"));
   }
 
   @Test
   public void testLoadTableFromNonExistentDatabase() {
-    // 在不存在的数据库中加载表应抛出异常
-    assertFalse("数据库不应存在", unifiedCatalog.databaseExists("non_existent_db"));
+    // Loading a table from a non-existent database should throw an exception
+    assertFalse("database should not exist", unifiedCatalog.databaseExists("non_existent_db"));
     assertThrows(
-        "从不存在的数据库加载表应抛出 NoSuchDatabaseException",
+        "loading a table from a non-existent database should throw NoSuchDatabaseException",
         NoSuchDatabaseException.class,
         () -> unifiedCatalog.loadTable("non_existent_db", "some_table"));
   }
 
   @Test
   public void testDropNonExistentDatabase() {
-    assertFalse("数据库不应存在", unifiedCatalog.databaseExists("non_existent_db"));
-    // iceberg catalog 删除不抛异常， lance catalog 抛异常 UnifiedCatalog不一定会选中lance
+    assertFalse("database should not exist", unifiedCatalog.databaseExists("non_existent_db"));
+    // iceberg catalog does not throw on drop, lance catalog throws; UnifiedCatalog may not select
+    // lance
     unifiedCatalog.dropDatabase("non_existent_db");
   }
 
@@ -583,34 +606,40 @@ public class TestUnifiedCatalogWithLanceIT {
   public void testDropNonEmptyDatabaseWithLanceTable() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 在数据库中创建一张 Lance 表
+    // Create a Lance table in the database
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "blocking_lance_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "blocking_lance_table");
     lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertTrue("Lance 表应存在", unifiedCatalog.tableExists(TEST_DB, "blocking_lance_table"));
+    assertTrue(
+        "Lance table should exist", unifiedCatalog.tableExists(TEST_DB, "blocking_lance_table"));
 
-    // 删除非空数据库，iceberg 抛出 NamespaceNotEmptyException lance 应抛出 DatabaseNotEmptyException
+    // Dropping a non-empty database: iceberg throws NamespaceNotEmptyException, lance should throw
+    // DatabaseNotEmptyException
     assertThrows(
-        "删除含 Lance 表的非空数据库应抛出 NamespaceNotEmptyException 或 DatabaseNotEmptyException",
+        "dropping a non-empty database with Lance table should throw NamespaceNotEmptyException or DatabaseNotEmptyException",
         Exception.class,
         () -> unifiedCatalog.dropDatabase(TEST_DB));
 
-    // 验证数据库和表仍然存在
-    assertTrue("数据库应仍然存在", unifiedCatalog.databaseExists(TEST_DB));
-    assertTrue("Lance 表应仍然存在", unifiedCatalog.tableExists(TEST_DB, "blocking_lance_table"));
+    // Verify database and table still exist
+    assertTrue("database should still exist", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue(
+        "Lance table should still exist",
+        unifiedCatalog.tableExists(TEST_DB, "blocking_lance_table"));
   }
 
   @Test
   public void testDropNonEmptyDatabaseWithIcebergTable() {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 在数据库中创建一张 Iceberg 表
+    // Create an Iceberg table in the database
     createIcebergTable(TEST_DB, "blocking_iceberg_table");
-    assertTrue("Iceberg 表应存在", unifiedCatalog.tableExists(TEST_DB, "blocking_iceberg_table"));
+    assertTrue(
+        "Iceberg table should exist",
+        unifiedCatalog.tableExists(TEST_DB, "blocking_iceberg_table"));
 
-    // 删除非空数据库应抛出 DatabaseNotEmptyException
+    // Dropping a non-empty database should throw DatabaseNotEmptyException
     assertThrows(
-        "删除含 Lance 表的非空数据库应抛出 NamespaceNotEmptyException 或 DatabaseNotEmptyException",
+        "dropping a non-empty database with Lance table should throw NamespaceNotEmptyException or DatabaseNotEmptyException",
         Exception.class,
         () -> unifiedCatalog.dropDatabase(TEST_DB));
   }
@@ -619,42 +648,46 @@ public class TestUnifiedCatalogWithLanceIT {
   public void testDropNonEmptyDatabaseWithMixedFormatTables() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 同时创建 Lance 表和 Iceberg 表
+    // Create both Lance and Iceberg tables
     String lanceLocation = warehouseLocation + "/" + TEST_DB + "/" + LANCE_TABLE;
     TableIdentifier lanceTableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     lanceCatalog.createTable(lanceTableId, lanceLocation, ARROW_SCHEMA, new HashMap<>());
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    // 删除含多种格式表的非空数据库应抛出异常
-    // 虽然是公用一个hive metastore，iceberg 会抛出 NamespaceNotEmptyException，lance 会抛出
+    // Dropping a non-empty database with mixed format tables should throw an exception
+    // Although sharing the same hive metastore, iceberg throws NamespaceNotEmptyException, lance
+    // throws
     // DatabaseNotEmptyException
     assertThrows(
-        "删除含混合格式表的非空数据库应抛出 NamespaceNotEmptyException | DatabaseNotEmptyException",
+        "dropping a non-empty database with mixed format tables should throw NamespaceNotEmptyException | DatabaseNotEmptyException",
         Exception.class,
         () -> unifiedCatalog.dropDatabase(TEST_DB));
 
-    // 验证所有表仍然存在
-    assertTrue("Lance 表应仍然存在", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
-    assertTrue("Iceberg 表应仍然存在", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
+    // Verify all tables still exist
+    assertTrue("Lance table should still exist", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
+    assertTrue(
+        "Iceberg table should still exist", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
   }
 
   @Test
   public void testDropNonExistentTable() {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    assertFalse("删除不存在的表应返回 false", unifiedCatalog.dropTable(TEST_DB, "non_existent_table", true));
+    assertFalse(
+        "dropping a non-existent table should return false",
+        unifiedCatalog.dropTable(TEST_DB, "non_existent_table", true));
   }
 
   @Test
   public void testLoadTableFormatFromNonExistentDatabase() {
-    assertFalse("数据库不应存在", unifiedCatalog.databaseExists("non_existent_db"));
+    assertFalse("database should not exist", unifiedCatalog.databaseExists("non_existent_db"));
     assertThrows(
-        "从不存在的数据库加载表格式应抛出异常",
+        "loading table format from a non-existent database should throw an exception",
         Exception.class,
         () -> unifiedCatalog.loadTableFormat("non_existent_db", "some_table"));
   }
 
-  // ==================== 删除表测试 ====================
+  // ==================== Drop Table Tests ====================
 
   @Test
   public void testDropLanceTable() throws IOException {
@@ -664,11 +697,14 @@ public class TestUnifiedCatalogWithLanceIT {
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
 
-    assertTrue("删除前 Lance 表应存在", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
+    assertTrue(
+        "Lance table should exist before drop", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
 
     boolean result = unifiedCatalog.dropTable(TEST_DB, LANCE_TABLE, true);
-    assertTrue("dropTable 应返回 true", result);
-    assertFalse("删除后 Lance 表不应存在", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
+    assertTrue("dropTable should return true", result);
+    assertFalse(
+        "Lance table should not exist after drop",
+        unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
   }
 
   @Test
@@ -676,61 +712,70 @@ public class TestUnifiedCatalogWithLanceIT {
     unifiedCatalog.createDatabase(TEST_DB);
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    assertTrue("删除前 Iceberg 表应存在", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
+    assertTrue(
+        "Iceberg table should exist before drop",
+        unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
 
     boolean result = unifiedCatalog.dropTable(TEST_DB, ICEBERG_TABLE, true);
-    assertTrue("dropTable 应返回 true", result);
-    assertFalse("删除后 Iceberg 表不应存在", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
+    assertTrue("dropTable should return true", result);
+    assertFalse(
+        "Iceberg table should not exist after drop",
+        unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
   }
 
-  // ==================== 端到端流程测试 ====================
+  // ==================== End-to-End Flow Tests ====================
 
   @Test
   public void testEndToEndMixedFormatWorkflow() throws IOException {
-    // 1. 创建数据库
+    // 1. Create database
     unifiedCatalog.createDatabase(TEST_DB);
-    assertTrue("数据库应存在", unifiedCatalog.databaseExists(TEST_DB));
+    assertTrue("database should exist", unifiedCatalog.databaseExists(TEST_DB));
 
-    // 2. 创建 Lance 表
+    // 2. Create Lance table
     String lanceLocation = warehouseLocation + "/" + TEST_DB + "/" + LANCE_TABLE;
     TableIdentifier lanceTableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, LANCE_TABLE);
     lanceCatalog.createTable(lanceTableId, lanceLocation, ARROW_SCHEMA, new HashMap<>());
 
-    // 3. 创建 Iceberg 表
+    // 3. Create Iceberg table
     createIcebergTable(TEST_DB, ICEBERG_TABLE);
 
-    // 4. 通过 UnifiedCatalog 列出所有表
+    // 4. List all tables via UnifiedCatalog
     List<TableIDWithFormat> tables = unifiedCatalog.listTables(TEST_DB);
-    assertEquals("应有 2 张表", 2, tables.size());
+    assertEquals("should have 2 tables", 2, tables.size());
 
-    // 5. 分别加载并验证格式
+    // 5. Load and verify formats separately
     AmoroTable<?> lanceTable = unifiedCatalog.loadTable(TEST_DB, LANCE_TABLE);
-    assertEquals("Lance 表格式应正确", TableFormat.LANCE, lanceTable.format());
+    assertEquals("Lance table format should be correct", TableFormat.LANCE, lanceTable.format());
 
     AmoroTable<?> icebergTable = unifiedCatalog.loadTable(TEST_DB, ICEBERG_TABLE);
-    assertEquals("Iceberg 表格式应正确", TableFormat.ICEBERG, icebergTable.format());
+    assertEquals(
+        "Iceberg table format should be correct", TableFormat.ICEBERG, icebergTable.format());
 
-    // 6. 删除 Lance 表
+    // 6. Drop Lance table
     unifiedCatalog.dropTable(TEST_DB, LANCE_TABLE, true);
-    assertFalse("Lance 表应已删除", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
-    assertTrue("Iceberg 表应仍存在", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
+    assertFalse(
+        "Lance table should have been dropped", unifiedCatalog.tableExists(TEST_DB, LANCE_TABLE));
+    assertTrue(
+        "Iceberg table should still exist", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
 
-    // 7. 删除 Iceberg 表
+    // 7. Drop Iceberg table
     unifiedCatalog.dropTable(TEST_DB, ICEBERG_TABLE, true);
-    assertFalse("Iceberg 表应已删除", unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
+    assertFalse(
+        "Iceberg table should have been dropped",
+        unifiedCatalog.tableExists(TEST_DB, ICEBERG_TABLE));
 
-    // 8. 删除数据库
+    // 8. Drop database
     unifiedCatalog.dropDatabase(TEST_DB);
-    assertFalse("数据库应已删除", unifiedCatalog.databaseExists(TEST_DB));
+    assertFalse("database should have been dropped", unifiedCatalog.databaseExists(TEST_DB));
   }
 
-  // ==================== 辅助方法 ====================
+  // ==================== Helper Methods ====================
 
   /**
-   * 通过 Iceberg 原生 Catalog 创建 Iceberg 表。
+   * Create an Iceberg table via the native Iceberg Catalog.
    *
-   * @param database 数据库名
-   * @param table 表名
+   * @param database database name
+   * @param table table name
    */
   private void createIcebergTable(String database, String table) {
     Map<String, String> icebergProps = new HashMap<>();
@@ -747,26 +792,26 @@ public class TestUnifiedCatalogWithLanceIT {
         ICEBERG_SCHEMA);
   }
 
-  // ==================== 数据写入和读取测试 ====================
+  // ==================== Data Write and Read Tests ====================
 
   @Test
   public void testCreateLanceTableWriteDataAndRead() throws IOException {
     unifiedCatalog.createDatabase(TEST_DB);
 
-    // 1. 创建默认 Lance 表
+    // 1. Create default Lance table
     String tableLocation = warehouseLocation + "/" + TEST_DB + "/" + "rw_lance_table";
     TableIdentifier tableId = TableIdentifier.of(CATALOG_NAME, TEST_DB, "rw_lance_table");
     LanceTable createdTable =
         lanceCatalog.createTable(tableId, tableLocation, ARROW_SCHEMA, new HashMap<>());
-    assertNotNull("创建的 Lance 表不应为 null", createdTable);
+    assertNotNull("created Lance table should not be null", createdTable);
 
-    // 2. 通过 Dataset API 写入模拟数据
+    // 2. Write mock data via Dataset API
     try (VectorSchemaRoot root = VectorSchemaRoot.create(ARROW_SCHEMA, allocator)) {
       BigIntVector idVector = (BigIntVector) root.getVector("id");
       VarCharVector nameVector = (VarCharVector) root.getVector("name");
       IntVector ageVector = (IntVector) root.getVector("age");
 
-      // 写入 3 行数据
+      // Write 3 rows of data
       root.allocateNew();
       idVector.setSafe(0, 1L);
       nameVector.setSafe(0, "Alice".getBytes(StandardCharsets.UTF_8));
@@ -782,7 +827,7 @@ public class TestUnifiedCatalogWithLanceIT {
 
       root.setRowCount(3);
 
-      // 使用 APPEND 模式写入数据到已有的 Dataset
+      // Write data to existing Dataset in APPEND mode
       Dataset appendedDataset =
           Dataset.write()
               .allocator(allocator)
@@ -790,15 +835,15 @@ public class TestUnifiedCatalogWithLanceIT {
               .reader(vectorSchemaRootToArrowReader(root, allocator))
               .mode(WriteParams.WriteMode.APPEND)
               .execute();
-      assertNotNull("追加写入后的 Dataset 不应为 null", appendedDataset);
+      assertNotNull("Dataset after append should not be null", appendedDataset);
       appendedDataset.close();
     }
 
-    // 3. 重新打开 Dataset 并读取验证
+    // 3. Reopen Dataset and verify by reading
     Dataset readDataset = Dataset.open(tableLocation, allocator);
-    assertEquals("应有 3 行数据", 3, readDataset.countRows());
+    assertEquals("should have 3 rows of data", 3, readDataset.countRows());
 
-    // 通过 Scanner 读取全部数据
+    // Read all data via Scanner
     LanceScanner scanner = readDataset.newScan();
     try (ArrowReader reader = scanner.scanBatches()) {
       List<Long> ids = new ArrayList<>();
@@ -818,39 +863,40 @@ public class TestUnifiedCatalogWithLanceIT {
         }
       }
 
-      assertEquals("应读取 3 行 id", 3, ids.size());
-      assertTrue("应包含 id=1", ids.contains(1L));
-      assertTrue("应包含 id=2", ids.contains(2L));
-      assertTrue("应包含 id=3", ids.contains(3L));
+      assertEquals("should read 3 rows of id", 3, ids.size());
+      assertTrue("should contain id=1", ids.contains(1L));
+      assertTrue("should contain id=2", ids.contains(2L));
+      assertTrue("should contain id=3", ids.contains(3L));
 
-      assertTrue("应包含 Alice", names.contains("Alice"));
-      assertTrue("应包含 Bob", names.contains("Bob"));
-      assertTrue("应包含 Charlie", names.contains("Charlie"));
+      assertTrue("should contain Alice", names.contains("Alice"));
+      assertTrue("should contain Bob", names.contains("Bob"));
+      assertTrue("should contain Charlie", names.contains("Charlie"));
 
-      assertTrue("应包含 age=30", ages.contains(30));
-      assertTrue("应包含 age=25", ages.contains(25));
-      assertTrue("应包含 age=35", ages.contains(35));
+      assertTrue("should contain age=30", ages.contains(30));
+      assertTrue("should contain age=25", ages.contains(25));
+      assertTrue("should contain age=35", ages.contains(35));
     }
 
     readDataset.close();
 
-    // 4. 通过 UnifiedCatalog 加载并验证
+    // 4. Load and verify via UnifiedCatalog
     AmoroTable<?> loadedTable = unifiedCatalog.loadTable(TEST_DB, "rw_lance_table");
-    assertNotNull("通过 UnifiedCatalog 加载的表不应为 null", loadedTable);
-    assertEquals("表格式应为 LANCE", TableFormat.LANCE, loadedTable.format());
+    assertNotNull("table loaded via UnifiedCatalog should not be null", loadedTable);
+    assertEquals("table format should be LANCE", TableFormat.LANCE, loadedTable.format());
   }
 
-  // ==================== 辅助方法 ====================
+  // ==================== Helper Methods ====================
 
   /**
-   * 将 VectorSchemaRoot 转换为 ArrowReader。
+   * Convert a VectorSchemaRoot to an ArrowReader.
    *
-   * <p>通过 Arrow IPC 流式协议，先将 VectorSchemaRoot 序列化到内存字节数组， 再从字节数组反序列化为 ArrowStreamReader。
+   * <p>Serialize the VectorSchemaRoot to an in-memory byte array via the Arrow IPC streaming
+   * protocol, then deserialize it back to an ArrowStreamReader.
    *
-   * @param root 要转换的 VectorSchemaRoot
-   * @param alloc 用于分配内存的 BufferAllocator
-   * @return 包含 root 数据的 ArrowReader
-   * @throws IOException 如果序列化/反序列化过程中发生 IO 错误
+   * @param root the VectorSchemaRoot to convert
+   * @param alloc BufferAllocator for memory allocation
+   * @return ArrowReader containing the root data
+   * @throws IOException if an IO error occurs during serialization/deserialization
    */
   private ArrowReader vectorSchemaRootToArrowReader(VectorSchemaRoot root, BufferAllocator alloc)
       throws IOException {

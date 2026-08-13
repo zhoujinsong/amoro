@@ -27,6 +27,7 @@ import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.server.AmoroManagementConf;
 import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.catalog.CatalogType;
+import org.apache.amoro.server.catalog.gravitino.GravitinoUnifiedCatalogProperties;
 import org.apache.amoro.server.dashboard.model.LatestSessionInfo;
 import org.apache.amoro.server.dashboard.model.LogInfo;
 import org.apache.amoro.server.dashboard.model.SqlResult;
@@ -37,6 +38,7 @@ import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.shade.guava32.com.google.common.collect.Maps;
 import org.apache.amoro.table.TableMetaStore;
 import org.apache.amoro.utils.CatalogUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.CatalogProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -287,6 +289,8 @@ public class TerminalManager {
       return "iceberg";
     } else if (catalogType.equalsIgnoreCase(CatalogType.GLUE.name())) {
       return "iceberg";
+    } else if (catalogType.equalsIgnoreCase(CatalogType.GRAVITINO.name())) {
+      return "iceberg";
     }
     throw new IllegalStateException("unknown catalog type: " + catalogType);
   }
@@ -402,6 +406,32 @@ public class TerminalManager {
       }
     } else if (formats.contains(TableFormat.PAIMON) && "hive".equals(catalogType)) {
       catalogMeta.putToCatalogProperties("metastore", catalogType);
+    }
+
+    if (CatalogMetaProperties.CATALOG_TYPE_GRAVITINO.equalsIgnoreCase(catalogType)) {
+      Map<String, String> props = catalogMeta.getCatalogProperties();
+      String icebergRestUri = props.get(GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI);
+      // Fallback: derive from gravitino.uri (same host, port 9001, path /iceberg).
+      if (StringUtils.isBlank(icebergRestUri)) {
+        icebergRestUri =
+            GravitinoUnifiedCatalogProperties.deriveIcebergRestUri(
+                props.get(GravitinoUnifiedCatalogProperties.GRAVITINO_URI));
+      }
+      if (StringUtils.isNotBlank(icebergRestUri)) {
+        props.put("uri", icebergRestUri);
+        props.put(CatalogProperties.CATALOG_IMPL, "org.apache.iceberg.rest.RESTCatalog");
+        // Iceberg CatalogUtil rejects having both `type` and `catalog-impl` set; the first ICEBERG
+        // block above may have set `type=gravitino` before catalog-impl was known. Remove it now.
+        props.remove(org.apache.iceberg.CatalogUtil.ICEBERG_CATALOG_TYPE);
+      } else {
+        throw new IllegalStateException(
+            "Terminal cannot resolve an Iceberg REST endpoint for gravitino catalog. "
+                + "Please configure '"
+                + GravitinoUnifiedCatalogProperties.ICEBERG_REST_URI
+                + "' or ensure '"
+                + GravitinoUnifiedCatalogProperties.GRAVITINO_URI
+                + "' is set so it can be derived.");
+      }
     }
   }
 

@@ -17,7 +17,7 @@ CREATE TABLE `catalog_metadata`
 (
     `catalog_id`             int(11) NOT NULL AUTO_INCREMENT,
     `catalog_name`           varchar(64) NOT NULL COMMENT 'catalog name',
-    `catalog_metastore`      varchar(64) NOT NULL COMMENT 'catalog type like hms/ams/hadoop/custom',
+    `catalog_metastore`      varchar(64) NOT NULL COMMENT 'catalog type like hms/ams/hadoop/custom/gravitino',
     `storage_configs`        mediumtext COMMENT 'base64 code of storage configs',
     `auth_configs`           mediumtext COMMENT 'base64 code of auth configs',
     `catalog_properties`     mediumtext COMMENT 'catalog properties',

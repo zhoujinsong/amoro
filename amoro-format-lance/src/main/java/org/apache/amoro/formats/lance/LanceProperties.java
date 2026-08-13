@@ -52,6 +52,9 @@ public class LanceProperties {
   public static final String CREATE_MODE_OVERWRITE = "overwrite";
   public static final String CREATE_MODE_CREATE = "create";
 
+  /** Default page size for lance REST listTables requests. */
+  public static final int DEFAULT_PAGE_SIZE = 1000;
+
   /**
    * Empty-table flag key. Value {@code "true"} indicates that the table is only registered in HMS
    * and the underlying data has not been created yet.
@@ -81,9 +84,13 @@ public class LanceProperties {
   public static final String COS_SECURITY_TOKEN =
       CatalogMetaProperties.COS_STORAGE_CONFIGS_SECURITY_TOKEN;
 
+  /** COS storage configuration - expires at millis */
+  public static final String EXPIRES_AT_MILLIS =
+      CatalogMetaProperties.COS_STORAGE_CONFIGS_EXPIRES_AT_MILLIS;
+
   /** List of COS storage keys, used to batch extract from catalog properties */
   public static final String[] COS_STORAGE_KEYS = {
-    COS_REGION, COS_SECRET_ID, COS_SECRET_KEY, COS_SECURITY_TOKEN
+    COS_REGION, COS_SECRET_ID, COS_SECRET_KEY, COS_SECURITY_TOKEN, EXPIRES_AT_MILLIS
   };
 
   /** COS scheme prefix */
