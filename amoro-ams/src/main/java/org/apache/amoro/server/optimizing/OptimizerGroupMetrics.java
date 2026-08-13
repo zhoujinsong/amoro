@@ -19,6 +19,16 @@
 package org.apache.amoro.server.optimizing;
 
 import static org.apache.amoro.metrics.MetricDefine.defineGauge;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_COMMITTING_TABLES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_EXECUTING_TABLES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_EXECUTING_TASKS;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_IDLE_TABLES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_MEMORY_BYTES_ALLOCATED;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_OPTIMIZER_INSTANCES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_PENDING_TABLES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_PENDING_TASKS;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_PLANING_TABLES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_GROUP_THREADS;
 import static org.apache.amoro.server.optimizing.OptimizingStatus.COMMITTING;
 import static org.apache.amoro.server.optimizing.OptimizingStatus.IDLE;
 import static org.apache.amoro.server.optimizing.OptimizingStatus.PENDING;
@@ -31,6 +41,7 @@ import org.apache.amoro.metrics.Gauge;
 import org.apache.amoro.metrics.Metric;
 import org.apache.amoro.metrics.MetricDefine;
 import org.apache.amoro.metrics.MetricKey;
+import org.apache.amoro.server.metrics.MetricFilterConfig;
 import org.apache.amoro.server.metrics.MetricRegistry;
 import org.apache.amoro.server.resource.OptimizerInstance;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableMap;
@@ -123,8 +134,11 @@ public class OptimizerGroupMetrics {
   }
 
   public void register() {
-    registerMetric(
-        registry,
+    MetricFilterConfig filter = MetricFilterConfig.current();
+
+    register(
+        filter,
+        F_GROUP_PENDING_TASKS,
         OPTIMIZER_GROUP_PENDING_TASKS,
         (Gauge<Integer>)
             () ->
@@ -133,46 +147,52 @@ public class OptimizerGroupMetrics {
                         task ->
                             task.getStatus().equals(PLANNED) || task.getStatus().equals(SCHEDULED))
                     .size());
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_EXECUTING_TASKS,
         OPTIMIZER_GROUP_EXECUTING_TASKS,
         (Gauge<Integer>)
             () -> optimizingQueue.collectTasks(task -> task.getStatus().equals(ACKED)).size());
 
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_PLANING_TABLES,
         OPTIMIZER_GROUP_PLANING_TABLES,
         (Gauge<Long>)
             () ->
                 optimizingQueue.getSchedulingPolicy().getTableRuntimeMap().values().stream()
                     .filter(t -> t.getOptimizingState().getOptimizingStatus().equals(PLANNING))
                     .count());
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_PENDING_TABLES,
         OPTIMIZER_GROUP_PENDING_TABLES,
         (Gauge<Long>)
             () ->
                 optimizingQueue.getSchedulingPolicy().getTableRuntimeMap().values().stream()
                     .filter(t -> t.getOptimizingState().getOptimizingStatus().equals(PENDING))
                     .count());
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_EXECUTING_TABLES,
         OPTIMIZER_GROUP_EXECUTING_TABLES,
         (Gauge<Long>)
             () ->
                 optimizingQueue.getSchedulingPolicy().getTableRuntimeMap().values().stream()
                     .filter(t -> t.getOptimizingState().getOptimizingStatus().isProcessing())
                     .count());
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_IDLE_TABLES,
         OPTIMIZER_GROUP_IDLE_TABLES,
         (Gauge<Long>)
             () ->
                 optimizingQueue.getSchedulingPolicy().getTableRuntimeMap().values().stream()
                     .filter(t -> t.getOptimizingState().getOptimizingStatus().equals(IDLE))
                     .count());
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_COMMITTING_TABLES,
         OPTIMIZER_GROUP_COMMITTING_TABLES,
         (Gauge<Long>)
             () ->
@@ -180,10 +200,14 @@ public class OptimizerGroupMetrics {
                     .filter(t -> t.getOptimizingState().getOptimizingStatus().equals(COMMITTING))
                     .count());
 
-    registerMetric(
-        registry, OPTIMIZER_GROUP_OPTIMIZER_INSTANCES, (Gauge<Integer>) optimizerInstances::size);
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_OPTIMIZER_INSTANCES,
+        OPTIMIZER_GROUP_OPTIMIZER_INSTANCES,
+        (Gauge<Integer>) optimizerInstances::size);
+    register(
+        filter,
+        F_GROUP_MEMORY_BYTES_ALLOCATED,
         OPTIMIZER_GROUP_MEMORY_BYTES_ALLOCATED,
         (Gauge<Long>)
             () ->
@@ -191,14 +215,23 @@ public class OptimizerGroupMetrics {
                     .mapToLong(OptimizerInstance::getMemoryMb)
                     .map(mb -> mb * 1024 * 1024)
                     .sum());
-    registerMetric(
-        registry,
+    register(
+        filter,
+        F_GROUP_THREADS,
         OPTIMIZER_GROUP_THREADS,
         (Gauge<Long>)
             () ->
                 optimizerInstances.values().stream()
                     .mapToLong(OptimizerInstance::getThreadCount)
                     .sum());
+  }
+
+  /** Register the metric only when the field is whitelisted by the current filter. */
+  private void register(
+      MetricFilterConfig filter, String field, MetricDefine define, Metric metric) {
+    if (filter.allowGroup(field)) {
+      registerMetric(registry, define, metric);
+    }
   }
 
   public void unregister() {

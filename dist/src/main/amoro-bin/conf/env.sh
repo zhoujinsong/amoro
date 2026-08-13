@@ -26,3 +26,14 @@
 
 # set your addition classpath dir
 # export AMORO_ADDITION_CLASSPATH=
+
+# set container id for COS, priority: UUID > POD_NAME > HOSTNAME > default
+if [ -n "${UUID}" ]; then
+    export CONTAINER_ID="container_${UUID}"
+elif [ -n "${POD_NAME}" ]; then
+    export CONTAINER_ID="container_${POD_NAME}"
+elif [ -n "${HOSTNAME}" ]; then
+    export CONTAINER_ID="container_${HOSTNAME}"
+else
+    export CONTAINER_ID="container_tcc_amoro"
+fi

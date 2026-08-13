@@ -491,6 +491,176 @@ public class AmoroManagementConf {
   public static final String CATALOG_HDFS_SITE = "hdfs-site";
   public static final String CATALOG_HIVE_SITE = "hive-site";
 
+  // ---------------------------------------------------------------------------
+  // Metric trimming / whitelist
+  // ---------------------------------------------------------------------------
+  // The metric profile selects which metric definitions are actually registered
+  // with the MetricRegistry at AMS start-up. The profile is a coarse knob; for
+  // fine-grained control, set the profile to "custom" and provide the four
+  // *.fields lists below.
+  //
+  // See: docs/软件设计/2026-05-29-AMS指标体系精简/2026-05-29-AMS指标体系精简.md
+  public static final ConfigOption<String> METRIC_PROFILE =
+      ConfigOptions.key("metric.profile")
+          .stringType()
+          .defaultValue("legacy")
+          .withDescription(
+              "Metric trimming profile. Valid values: recommended (26 KEEP metrics), "
+                  + "legacy (full 60 metrics, default for backwards compatibility), "
+                  + "minimal (14 metrics for very high-cardinality deployments), "
+                  + "custom (honour metric.<class>.fields lists verbatim).");
+
+  public static final ConfigOption<List<String>> METRIC_OPTIMIZING_FIELDS =
+      ConfigOptions.key("metric.optimizing.fields")
+          .stringType()
+          .asList()
+          .noDefaultValue()
+          .withDescription(
+              "Whitelist of TableOptimizingMetrics field names. Only honoured when "
+                  + "metric.profile = custom. Empty list means register none.");
+
+  public static final ConfigOption<List<String>> METRIC_SUMMARY_FIELDS =
+      ConfigOptions.key("metric.summary.fields")
+          .stringType()
+          .asList()
+          .noDefaultValue()
+          .withDescription(
+              "Whitelist of TableSummaryMetrics field names. Only honoured when "
+                  + "metric.profile = custom. Empty list means register none.");
+
+  public static final ConfigOption<List<String>> METRIC_ORPHAN_FIELDS =
+      ConfigOptions.key("metric.orphan.fields")
+          .stringType()
+          .asList()
+          .noDefaultValue()
+          .withDescription(
+              "Whitelist of TableOrphanFilesCleaningMetrics field names. Only honoured "
+                  + "when metric.profile = custom. Empty list means register none.");
+
+  public static final ConfigOption<List<String>> METRIC_OPTIMIZER_GROUP_FIELDS =
+      ConfigOptions.key("metric.optimizer-group.fields")
+          .stringType()
+          .asList()
+          .noDefaultValue()
+          .withDescription(
+              "Whitelist of OptimizerGroupMetrics field names. Only honoured when "
+                  + "metric.profile = custom. Empty list means register none.");
+
+  // Global value-based filter: when enabled, the seven delete-related fields of
+  // TableSummaryMetrics (equality / position / dangling delete files, sizes, records)
+  // are only registered with the MetricRegistry while their current value is > 0.
+  // Each metric is judged independently against its own value (no joint condition).
+  // Default: false — keep the social/community behaviour of always registering.
+  // See: docs/软件设计/2026-05-29-AMS指标体系精简/2026-06-01-按值过滤delete指标.md
+  public static final ConfigOption<Boolean> METRIC_SUMMARY_SKIP_ZERO_DELETES =
+      ConfigOptions.key("metric.summary.skip-zero-deletes")
+          .booleanType()
+          .defaultValue(false)
+          .withDescription(
+              "When true, the seven delete-related TableSummaryMetrics fields "
+                  + "(equality / position / dangling delete files, sizes, records) are "
+                  + "only registered while their current value is > 0; when the value "
+                  + "transitions back to 0 they are dynamically unregistered. Each "
+                  + "metric is judged independently. Default false keeps the upstream "
+                  + "behaviour of always registering. Orthogonal to metric.profile.");
+
+  // Global value/threshold-based filter for the 10 status-class TableOptimizingMetrics fields
+  // (5 status_in_* gauges + 5 status_*_duration_mills gauges). When enabled, each field is
+  // dynamically registered only while its current value strictly exceeds its effective
+  // threshold (0 for status_in_*; per-state independent threshold for status_*_duration_mills).
+  // Each metric is judged independently. Default: false — keep the social/community behaviour
+  // of always registering. Orthogonal to metric.profile.
+  // See: docs/软件设计/2026-05-29-AMS指标体系精简/2026-06-01-TableOptimizing指标精简方案.md
+  public static final ConfigOption<Boolean> METRIC_OPTIMIZING_SKIP_ZERO_STATUS =
+      ConfigOptions.key("metric.optimizing.skip-zero-status")
+          .booleanType()
+          .defaultValue(false)
+          .withDescription(
+              "When true, the 10 status-class TableOptimizingMetrics fields "
+                  + "(5 status_in_* + 5 status_*_duration_mills) are only registered while "
+                  + "their current value strictly exceeds the effective threshold; when the "
+                  + "value falls back they are dynamically unregistered. Each metric is judged "
+                  + "independently. Default false keeps the upstream behaviour of always "
+                  + "registering. Orthogonal to metric.profile.");
+
+  public static final ConfigOption<Long> METRIC_OPTIMIZING_STATUS_DURATION_THRESHOLD_IDLE =
+      ConfigOptions.key("metric.optimizing.status-duration-threshold-mills.idle")
+          .longType()
+          .defaultValue(0L)
+          .withDescription(
+              "Independent threshold (millis) for status_idle_duration_mills. The metric is "
+                  + "registered only while value > threshold. Negative values are coerced to 0 "
+                  + "with a warning. Only honoured when metric.optimizing.skip-zero-status=true.");
+
+  public static final ConfigOption<Long> METRIC_OPTIMIZING_STATUS_DURATION_THRESHOLD_PENDING =
+      ConfigOptions.key("metric.optimizing.status-duration-threshold-mills.pending")
+          .longType()
+          .defaultValue(0L)
+          .withDescription(
+              "Independent threshold (millis) for status_pending_duration_mills. The metric is "
+                  + "registered only while value > threshold. Negative values are coerced to 0 "
+                  + "with a warning. Only honoured when metric.optimizing.skip-zero-status=true.");
+
+  public static final ConfigOption<Long> METRIC_OPTIMIZING_STATUS_DURATION_THRESHOLD_PLANNING =
+      ConfigOptions.key("metric.optimizing.status-duration-threshold-mills.planning")
+          .longType()
+          .defaultValue(0L)
+          .withDescription(
+              "Independent threshold (millis) for status_planning_duration_mills. The metric is "
+                  + "registered only while value > threshold. Negative values are coerced to 0 "
+                  + "with a warning. Only honoured when metric.optimizing.skip-zero-status=true.");
+
+  public static final ConfigOption<Long> METRIC_OPTIMIZING_STATUS_DURATION_THRESHOLD_EXECUTING =
+      ConfigOptions.key("metric.optimizing.status-duration-threshold-mills.executing")
+          .longType()
+          .defaultValue(0L)
+          .withDescription(
+              "Independent threshold (millis) for status_executing_duration_mills. The metric is "
+                  + "registered only while value > threshold. Negative values are coerced to 0 "
+                  + "with a warning. Only honoured when metric.optimizing.skip-zero-status=true.");
+
+  public static final ConfigOption<Long> METRIC_OPTIMIZING_STATUS_DURATION_THRESHOLD_COMMITTING =
+      ConfigOptions.key("metric.optimizing.status-duration-threshold-mills.committing")
+          .longType()
+          .defaultValue(0L)
+          .withDescription(
+              "Independent threshold (millis) for status_committing_duration_mills. The metric is "
+                  + "registered only while value > threshold. Negative values are coerced to 0 "
+                  + "with a warning. Only honoured when metric.optimizing.skip-zero-status=true.");
+
+  // Scrape-stage filter for the prometheus reporter: when true, Counter samples whose current
+  // value equals 0 are dropped from the /metrics output. Operates strictly at scrape stage,
+  // does NOT touch MetricRegistry registration. Orthogonal to metric.profile /
+  // metric.summary.skip-zero-deletes / metric.optimizing.skip-zero-status. May be overridden
+  // per reporter via plugins/metric-reporters.yaml properties.skip-zero-counters.
+  // See: docs/软件设计/2026-05-29-AMS指标体系精简/2026-06-02-按值过滤Counter零值指标.md
+  public static final ConfigOption<Boolean> METRIC_PROMETHEUS_SKIP_ZERO_COUNTERS =
+      ConfigOptions.key("metric.prometheus.skip-zero-counters")
+          .booleanType()
+          .defaultValue(false)
+          .withDescription(
+              "When true, the prometheus reporter skips Counter samples whose current value "
+                  + "equals 0 in /metrics output. Operates at scrape stage, orthogonal to "
+                  + "metric.profile / metric.summary.skip-zero-deletes / "
+                  + "metric.optimizing.skip-zero-status. May be overridden by per-reporter "
+                  + "properties.skip-zero-counters in plugins/metric-reporters.yaml.");
+
+  // Scrape-stage filter for the prometheus reporter: when true, Gauge samples whose current
+  // value equals 0 are dropped from the /metrics output. Operates strictly at scrape stage,
+  // does NOT touch MetricRegistry registration. Orthogonal to metric.profile /
+  // metric.summary.skip-zero-deletes / metric.optimizing.skip-zero-status. May be overridden
+  // per reporter via plugins/metric-reporters.yaml properties.skip-zero-gauges.
+  public static final ConfigOption<Boolean> METRIC_PROMETHEUS_SKIP_ZERO_GAUGES =
+      ConfigOptions.key("metric.prometheus.skip-zero-gauges")
+          .booleanType()
+          .defaultValue(false)
+          .withDescription(
+              "When true, the prometheus reporter skips Gauge samples whose current value "
+                  + "equals 0 in /metrics output. Operates at scrape stage, orthogonal to "
+                  + "metric.profile / metric.summary.skip-zero-deletes / "
+                  + "metric.optimizing.skip-zero-status. May be overridden by per-reporter "
+                  + "properties.skip-zero-gauges in plugins/metric-reporters.yaml.");
+
   // container config
   public static final String CONTAINER_LIST = "containers";
   public static final String CONTAINER_NAME = "name";

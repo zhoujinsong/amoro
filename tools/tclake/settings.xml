@@ -81,7 +81,149 @@
     </mirrors>
     -->
 
+    <offline>false</offline>
+
+    <!-- 使用iOA免代理模式，或在devcloud开发机时，无需配置代理 -->
+    <proxies>
+        <!--如果使用iOA的NGN模式，建议使用如下代理配置
+        <proxy>
+          <id>NGN</id>
+          <active>true</active>
+          <protocol>http</protocol>
+          <host>127.0.0.1</host>
+          <port>12639</port>
+          <nonProxyHosts>localhost|127.0.0.1</nonProxyHosts>
+        </proxy>-->
+    </proxies>
+
+    <mirrors>
+        <mirror>
+            <id>maven-public</id>
+            <mirrorOf>central</mirrorOf>
+            <name>internal repository</name>
+            <url>https://mirrors.tencent.com/nexus/repository/maven-public/</url>
+        </mirror>
+    </mirrors>
+
+    <profiles>
+        <profile>
+            <id>tencent</id>
+            <repositories>
+                <repository>
+                    <id>maven_public</id>
+                    <url>https://mirrors.tencent.com/nexus/repository/maven-public/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+                <repository>
+                    <id>tencent_public</id>
+                    <url>https://mirrors.tencent.com/repository/maven/tencent_public/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                </repository>
+                <repository>
+                    <id>thirdparty</id>
+                    <url>https://mirrors.tencent.com/repository/maven/thirdparty/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                </repository>
+                <repository>
+                    <id>thirdparty-snapshots</id>
+                    <url>https://mirrors.tencent.com/repository/maven/thirdparty-snapshots/</url>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+                <repository>
+                    <id>mqq</id>
+                    <url>https://mirrors.tencent.com/repository/maven/mqq/</url>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+                <repository>
+                    <id>tclake-release</id>
+                    <name>tencent maven</name>
+                    <url>https://mirrors.tencent.com/repository/maven/tclake</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+                <repository>
+                    <id>tclake-snapshot</id>
+                    <name>tencent maven</name>
+                    <url>https://mirrors.tencent.com/repository/maven/tclake-snapshot</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+            </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>maven-public</id>
+                    <url>https://mirrors.tencent.com/nexus/repository/maven-public/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                </pluginRepository>
+                <pluginRepository>
+                    <id>tencent_public</id>
+                    <url>https://mirrors.tencent.com/repository/maven/tencent_public/</url>
+                    <releases>
+                        <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>false</enabled>
+                    </snapshots>
+                </pluginRepository>
+            </pluginRepositories>
+        </profile>
+
+        <!--        <profile>-->
+        <!--            <id>env-dev</id>-->
+        <!--            <repositories>-->
+        <!--                <repository>-->
+        <!--                    <id>tclake-release</id>-->
+        <!--                    <name>tencent maven</name>-->
+        <!--                    <url>https://mirrors.tencent.com/repository/maven/tclake</url>-->
+        <!--                </repository>-->
+        <!--                <repository>-->
+        <!--                    <id>tclake-snapshot</id>-->
+        <!--                    <name>tencent maven</name>-->
+        <!--                    <url>https://mirrors.tencent.com/repository/maven/tclake-snapshot</url>-->
+        <!--                </repository>-->
+        <!--            </repositories>-->
+        <!--        </profile>-->
+    </profiles>
+
     <activeProfiles>
-        <activeProfile>env-dev</activeProfile>
+        <activeProfile>tencent</activeProfile>
     </activeProfiles>
 </settings>

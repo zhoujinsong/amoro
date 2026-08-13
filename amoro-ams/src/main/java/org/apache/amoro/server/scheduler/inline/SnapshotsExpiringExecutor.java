@@ -34,7 +34,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class SnapshotsExpiringExecutor extends PeriodicTableScheduler {
   private static final Logger LOG = LoggerFactory.getLogger(SnapshotsExpiringExecutor.class);
 
-  private static final long INTERVAL = 60 * 60 * 1000L; // 1 hour
+  private static final long INTERVAL = 4 * 60 * 60 * 1000L; // 4 hours
 
   public SnapshotsExpiringExecutor(TableService tableService, int poolSize) {
     super(tableService, poolSize);

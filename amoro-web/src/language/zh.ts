@@ -226,4 +226,13 @@ export default {
   Finished: '已结束',
   Created: '已创建',
   totalCount: '共 {total} 条',
+  manualMaintenance: '手动运维',
+  triggerOptimizing: '触发优化',
+  triggerOptimizingDesc: '手动触发表的优化合并，即使自优化功能已关闭也可以执行',
+  triggerNow: '立即触发',
+  confirmTriggerOptimizing: '确认触发优化',
+  triggerOptimizingConfirmText: '确定要手动触发此表的优化合并吗？此操作将强制将表加入调度队列。',
+  triggerOptimizingSuccess: '优化触发成功',
+  triggerOptimizingFailed: '优化触发失败',
+  optimizingOperations: '优化操作',
 }

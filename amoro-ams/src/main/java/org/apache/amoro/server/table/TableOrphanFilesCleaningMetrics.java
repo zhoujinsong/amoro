@@ -19,10 +19,16 @@
 package org.apache.amoro.server.table;
 
 import static org.apache.amoro.metrics.MetricDefine.defineCounter;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_ORPHAN_CONTENT_FILE_CLEANING_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_ORPHAN_EXPECTED_CONTENT_FILE_CLEANING_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_ORPHAN_EXPECTED_METADATA_FILE_CLEANING_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_ORPHAN_METADATA_FILE_CLEANING_COUNT;
 
 import org.apache.amoro.ServerTableIdentifier;
 import org.apache.amoro.metrics.Counter;
+import org.apache.amoro.metrics.Metric;
 import org.apache.amoro.metrics.MetricDefine;
+import org.apache.amoro.server.metrics.MetricFilterConfig;
 import org.apache.amoro.server.metrics.MetricRegistry;
 
 /** Table Orphan Files Cleaning metrics. */
@@ -65,18 +71,48 @@ public class TableOrphanFilesCleaningMetrics extends AbstractTableMetrics {
 
   @Override
   public void registerMetrics(MetricRegistry registry) {
-    if (globalRegistry == null) {
-      registerMetric(registry, TABLE_ORPHAN_CONTENT_FILE_CLEANING_COUNT, orphanDataFilesCount);
-      registerMetric(registry, TABLE_ORPHAN_METADATA_FILE_CLEANING_COUNT, orphanMetadataFilesCount);
-      registerMetric(
-          registry,
-          TABLE_EXPECTED_ORPHAN_CONTENT_FILE_CLEANING_COUNT,
-          expectedOrphanDataFilesCount);
-      registerMetric(
-          registry,
-          TABLE_EXPECTED_ORPHAN_METADATA_FILE_CLEANING_COUNT,
-          expectedOrphanMetadataFilesCount);
-      globalRegistry = registry;
+    if (globalRegistry != null) {
+      return;
+    }
+    MetricFilterConfig filter = MetricFilterConfig.current();
+
+    register(
+        filter,
+        registry,
+        F_ORPHAN_CONTENT_FILE_CLEANING_COUNT,
+        TABLE_ORPHAN_CONTENT_FILE_CLEANING_COUNT,
+        orphanDataFilesCount);
+    register(
+        filter,
+        registry,
+        F_ORPHAN_METADATA_FILE_CLEANING_COUNT,
+        TABLE_ORPHAN_METADATA_FILE_CLEANING_COUNT,
+        orphanMetadataFilesCount);
+    register(
+        filter,
+        registry,
+        F_ORPHAN_EXPECTED_CONTENT_FILE_CLEANING_COUNT,
+        TABLE_EXPECTED_ORPHAN_CONTENT_FILE_CLEANING_COUNT,
+        expectedOrphanDataFilesCount);
+    register(
+        filter,
+        registry,
+        F_ORPHAN_EXPECTED_METADATA_FILE_CLEANING_COUNT,
+        TABLE_EXPECTED_ORPHAN_METADATA_FILE_CLEANING_COUNT,
+        expectedOrphanMetadataFilesCount);
+
+    globalRegistry = registry;
+  }
+
+  /** Register the metric only when the field is whitelisted by the current filter. */
+  private void register(
+      MetricFilterConfig filter,
+      MetricRegistry registry,
+      String field,
+      MetricDefine define,
+      Metric metric) {
+    if (filter.allowOrphan(field)) {
+      registerMetric(registry, define, metric);
     }
   }
 

@@ -40,6 +40,7 @@ import org.apache.amoro.server.catalog.CatalogManager;
 import org.apache.amoro.server.dashboard.controller.CatalogController;
 import org.apache.amoro.server.dashboard.controller.HealthCheckController;
 import org.apache.amoro.server.dashboard.controller.LoginController;
+import org.apache.amoro.server.dashboard.controller.MaintenanceController;
 import org.apache.amoro.server.dashboard.controller.OptimizerController;
 import org.apache.amoro.server.dashboard.controller.OptimizerGroupController;
 import org.apache.amoro.server.dashboard.controller.OverviewController;
@@ -85,6 +86,7 @@ public class DashboardServer {
   private final PlatformFileInfoController platformFileInfoController;
   private final SettingController settingController;
   private final TableController tableController;
+  private final MaintenanceController maintenanceController;
   private final TerminalController terminalController;
   private final VersionController versionController;
   private final OverviewController overviewController;
@@ -111,6 +113,7 @@ public class DashboardServer {
         new ServerTableDescriptor(catalogManager, tableManager, serviceConfig);
     this.tableController =
         new TableController(catalogManager, tableManager, tableDescriptor, serviceConfig);
+    this.maintenanceController = new MaintenanceController(tableManager);
     this.terminalController = new TerminalController(terminalManager);
     this.versionController = new VersionController();
     OverviewManager manager = new OverviewManager(serviceConfig);
@@ -354,6 +357,15 @@ public class DashboardServer {
             get("/system", settingController::getSystemSetting);
           });
 
+      // maintenance apis
+      path(
+          "/maintenance",
+          () -> {
+            post(
+                "/catalogs/{catalog}/dbs/{db}/tables/{table}/optimizing/trigger",
+                maintenanceController::triggerOptimizing);
+          });
+
       // health api
       get("/health/status", healthCheckController::healthCheck);
 
@@ -501,5 +513,9 @@ public class DashboardServer {
     } catch (Exception e) {
       throw new SignatureCheckException("Check url signature failed", e);
     }
+  }
+
+  public MaintenanceController getMaintenanceController() {
+    return maintenanceController;
   }
 }

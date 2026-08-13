@@ -47,6 +47,8 @@ public class SchedulingPolicy {
   private static final String SCHEDULING_POLICY_PROPERTY_NAME = "scheduling-policy";
 
   private final Map<ServerTableIdentifier, DefaultTableRuntime> tableRuntimeMap = new HashMap<>();
+  // 强制触发优化的表集合，被标记的表跳过快照检查和minPlanInterval限制
+  private final Set<ServerTableIdentifier> forceTriggerTables = ConcurrentHashMap.newKeySet();
   private volatile String policyName;
   private final Lock tableLock = new ReentrantLock();
   private static final Map<String, SorterFactory> sorterFactoryCache = new ConcurrentHashMap<>();
@@ -89,6 +91,18 @@ public class SchedulingPolicy {
     tableLock.lock();
     try {
       fillSkipSet(skipSet);
+      // 优先选中强制触发的表，直接遍历forceTriggerTables（通常只有0~几个元素），
+      // 避免遍历全量tableRuntimeMap带来的性能开销
+      for (ServerTableIdentifier identifier : forceTriggerTables) {
+        if (!skipSet.contains(identifier)) {
+          DefaultTableRuntime tableRuntime = tableRuntimeMap.get(identifier);
+          if (tableRuntime != null) {
+            // 表被选中后才消费标记
+            forceTriggerTables.remove(identifier);
+            return tableRuntime;
+          }
+        }
+      }
       return tableRuntimeMap.values().stream()
           .filter(tableRuntime -> !skipSet.contains(tableRuntime.getTableIdentifier()))
           .min(createSorterByPolicy())
@@ -120,15 +134,36 @@ public class SchedulingPolicy {
     }
   }
 
+  /** 添加强制触发标记，被标记的表将跳过快照检查和minPlanInterval限制。 标记为一次性使用，表被选中调度后自动移除。 */
+  public void addForceTrigger(ServerTableIdentifier identifier) {
+    forceTriggerTables.add(identifier);
+  }
+
+  /** 检查是否有强制触发的表等待调度 */
+  public boolean hasForceTriggerTables() {
+    return !forceTriggerTables.isEmpty();
+  }
+
+  /** 检查指定表是否已经在强制触发的等待队列中 */
+  public boolean isForceTriggerPending(ServerTableIdentifier identifier) {
+    return forceTriggerTables.contains(identifier);
+  }
+
   private void fillSkipSet(Set<ServerTableIdentifier> originalSet) {
     long currentTime = System.currentTimeMillis();
     tableRuntimeMap.values().stream()
         .map(DefaultTableRuntime::getOptimizingState)
         .filter(
-            optimizingState ->
-                !isTablePending(optimizingState)
-                    || currentTime - optimizingState.getLastPlanTime()
-                        < optimizingState.getOptimizingConfig().getMinPlanInterval())
+            optimizingState -> {
+              // 强制触发的表不加入跳过集合（即不跳过，一定会被调度）
+              // 注意：这里只检查不消费，标记在scheduleTable选中表后才消费
+              if (forceTriggerTables.contains(optimizingState.getTableIdentifier())) {
+                return false;
+              }
+              return !isTablePending(optimizingState)
+                  || currentTime - optimizingState.getLastPlanTime()
+                      < optimizingState.getOptimizingConfig().getMinPlanInterval();
+            })
         .forEach(tableRuntime -> originalSet.add(tableRuntime.getTableIdentifier()));
   }
 

@@ -279,6 +279,12 @@ public class DefaultOptimizingState extends StatedPersistentBase implements Proc
           if (configChanged) {
             tableHandler.handleTableChanged(tableRuntime, configuration);
           }
+          // Re-evaluate value/threshold-based registration of the 10 status-class optimizing
+          // metrics so that duration-based threshold crossings (e.g. PENDING > 30 min) are
+          // picked up between status-change events. Cheap no-op when skipZeroStatus is off.
+          // We are already holding the table lock via invokeConsistency, so this call is
+          // serialised with statusChanged().
+          optimizingMetrics.refresh();
           return tableRuntime;
         });
   }
@@ -357,7 +363,13 @@ public class DefaultOptimizingState extends StatedPersistentBase implements Proc
               lastFullOptimizingTime = optimizingProcess.getPlanTime();
             }
           }
-          optimizingMetrics.processComplete(processType, success, optimizingProcess.getPlanTime());
+          // 主动关闭的 process（如 AMS 重启恢复时关闭 COMMITTING 状态的 process）
+          // 不是一次真正的 process 完成，不应计入任何 process 统计（包括 totalCount、
+          // failedCount 和 consecutiveFailures）
+          if (optimizingProcess.getStatus() != ProcessStatus.CLOSED) {
+            optimizingMetrics.processComplete(
+                processType, success, optimizingProcess.getPlanTime());
+          }
           updateOptimizingStatus(OptimizingStatus.IDLE);
           optimizingProcess = null;
           persistUpdatingRuntime();

@@ -226,4 +226,13 @@ export default {
   Finished: 'Finished',
   Created: 'Created',
   totalCount: 'total {total} records',
+  manualMaintenance: 'Manual Maintenance',
+  triggerOptimizing: 'Trigger Optimizing',
+  triggerOptimizingDesc: 'Manually trigger table optimization and merging, even if self-optimizing is disabled',
+  triggerNow: 'Trigger Now',
+  confirmTriggerOptimizing: 'Confirm Trigger Optimizing',
+  triggerOptimizingConfirmText: 'Are you sure you want to manually trigger optimization for this table? This action will force the table into the scheduling queue.',
+  triggerOptimizingSuccess: 'Optimizing triggered successfully',
+  triggerOptimizingFailed: 'Failed to trigger optimizing',
+  optimizingOperations: 'Optimizing Operations',
 }

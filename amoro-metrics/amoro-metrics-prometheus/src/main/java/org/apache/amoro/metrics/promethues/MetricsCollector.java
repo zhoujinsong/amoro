@@ -43,9 +43,33 @@ public class MetricsCollector extends Collector {
   private static final Pattern NAME_PATTERN = Pattern.compile("[a-zA-Z_:][a-zA-Z0-9_:]*");
   private static final Pattern LABEL_PATTERN = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
   MetricSet metrics;
+  private final boolean skipZeroCounters;
+  private final boolean skipZeroGauges;
 
   public MetricsCollector(MetricSet metrics) {
+    this(metrics, false, false);
+  }
+
+  /**
+   * @param metrics global metric set to expose.
+   * @param skipZeroCounters when {@code true}, Counter samples whose current value equals 0 are
+   *     dropped from the {@code /metrics} response.
+   */
+  public MetricsCollector(MetricSet metrics, boolean skipZeroCounters) {
+    this(metrics, skipZeroCounters, false);
+  }
+
+  /**
+   * @param metrics global metric set to expose.
+   * @param skipZeroCounters when {@code true}, Counter samples whose current value equals 0 are
+   *     dropped from the {@code /metrics} response.
+   * @param skipZeroGauges when {@code true}, Gauge samples whose current value equals 0 are dropped
+   *     from the {@code /metrics} response.
+   */
+  public MetricsCollector(MetricSet metrics, boolean skipZeroCounters, boolean skipZeroGauges) {
     this.metrics = metrics;
+    this.skipZeroCounters = skipZeroCounters;
+    this.skipZeroGauges = skipZeroGauges;
   }
 
   @Override
@@ -83,13 +107,25 @@ public class MetricsCollector extends Collector {
   private MetricFamilySamples createFamilySample(
       MetricDefine define, List<MetricKey> keys, Map<MetricKey, Metric> registeredMetrics) {
 
+    boolean counterFamily = define.getType() == MetricType.Counter;
+
     List<MetricFamilySamples.Sample> samples = Lists.newArrayList();
     for (MetricKey key : keys) {
       Metric metric = registeredMetrics.get(key);
+      double value = covertValue(metric);
+
+      // Scrape-stage filter: drop zero-valued samples when explicitly enabled.
+      // skipZeroCounters only affects Counter; skipZeroGauges only affects Gauge.
+      if (skipZeroCounters && counterFamily && value == 0.0d) {
+        continue;
+      }
+      if (skipZeroGauges && !counterFamily && value == 0.0d) {
+        continue;
+      }
 
       MetricFamilySamples.Sample sample =
           new MetricFamilySamples.Sample(
-              PREFIX + define.getName(), define.getTags(), key.valueOfTags(), covertValue(metric));
+              PREFIX + define.getName(), define.getTags(), key.valueOfTags(), value);
       samples.add(sample);
     }
 

@@ -216,6 +216,13 @@ export function cancelOptimizingProcess(
   return request.post(`api/ams/v1/tables/catalogs/${catalog}/dbs/${db}/tables/${table}/optimizing-processes/${processId}/cancel`)
 }
 
+// trigger manual optimizing
+export function triggerOptimizing(
+  { catalog = '' as string, db = '' as string, table = '' as string },
+) {
+  return request.post(`api/ams/v1/maintenance/catalogs/${catalog}/dbs/${db}/tables/${table}/optimizing/trigger`, {}, { handleError: false })
+}
+
 export function getBranches(params: { catalog: string, db: string, table: string }) {
   const { catalog, db, table } = params
   return request.get(`/api/ams/v1/tables/catalogs/${catalog}/dbs/${db}/tables/${table}/branches`)

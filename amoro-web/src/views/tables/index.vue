@@ -24,6 +24,7 @@ import UFiles from './components/Files.vue'
 import UOperations from './components/Operations.vue'
 import USnapshots from './components/Snapshots.vue'
 import UOptimizing from './components/Optimizing.vue'
+import UManualMaintenance from './components/ManualMaintenance.vue'
 import useStore from '@/store/index'
 import type { IBaseDetailInfo } from '@/types/common.type'
 
@@ -35,6 +36,7 @@ export default defineComponent({
     UOperations,
     USnapshots,
     UOptimizing,
+    UManualMaintenance,
   },
   setup() {
     const router = useRouter()
@@ -47,6 +49,7 @@ export default defineComponent({
       { key: 'Snapshots', label: 'snapshots' },
       { key: 'Optimizing', label: 'optimizing' },
       { key: 'Operations', label: 'operations' },
+      { key: 'ManualMaintenance', label: 'manualMaintenance' },
     ])
 
     const state = reactive({

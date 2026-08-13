@@ -100,6 +100,9 @@ public class OptimizingQueue extends PersistentBase {
   private final Condition planningCompleted = scheduleLock.newCondition();
   private final int maxPlanningParallelism;
   private final OptimizerGroupMetrics metrics;
+  // 强制触发优化的表集合，planning时临时将config.enabled设为true
+  private final Set<ServerTableIdentifier> forceTriggerPlanningTables =
+      ConcurrentHashMap.newKeySet();
   private ResourceGroup optimizerGroup;
   private final Map<ServerTableIdentifier, AtomicInteger> optimizingTasksMap =
       new ConcurrentHashMap<>();
@@ -177,6 +180,55 @@ public class OptimizingQueue extends PersistentBase {
     }
   }
 
+  /**
+   * 强制触发表的优化，即使 self-optimizing.enabled 为 false 也可以执行。 该方法会将表加入调度队列，并标记为强制触发（跳过快照检查和
+   * minPlanInterval 限制）。
+   *
+   * @param tableRuntime 表的运行时信息
+   * @return true 如果成功加入调度队列
+   */
+  public boolean forceTriggerTable(DefaultTableRuntime tableRuntime) {
+    DefaultOptimizingState optimizingState = tableRuntime.getOptimizingState();
+    if (optimizingState.getOptimizingStatus().isProcessing()) {
+      LOG.warn(
+          "Table {} is already in optimizing process, skip force trigger",
+          tableRuntime.getTableIdentifier());
+      return false;
+    }
+    LOG.info(
+        "Force trigger optimizing for table {} in queue {}",
+        tableRuntime.getTableIdentifier(),
+        optimizerGroup.getName());
+    optimizingState.resetTaskQuotas(
+        System.currentTimeMillis() - AmoroServiceConstants.QUOTA_LOOK_BACK_TIME);
+    // 重置 lastPlanTime 绕过 minPlanInterval 限制
+    optimizingState.setLastPlanTime(0);
+    // 标记强制触发，跳过快照检查
+    scheduler.addForceTrigger(tableRuntime.getTableIdentifier());
+    // 标记强制触发，planning时临时启用优化配置
+    forceTriggerPlanningTables.add(tableRuntime.getTableIdentifier());
+    scheduler.addTable(tableRuntime);
+    // 唤醒等待中的调度线程
+    scheduleLock.lock();
+    try {
+      planningCompleted.signalAll();
+    } finally {
+      scheduleLock.unlock();
+    }
+    return true;
+  }
+
+  /**
+   * 检查指定表是否已经在强制触发的等待队列中（已触发但尚未开始planning）。
+   *
+   * @param identifier 表标识
+   * @return true 如果表已在等待队列中
+   */
+  public boolean isForceTriggerPending(ServerTableIdentifier identifier) {
+    return scheduler.isForceTriggerPending(identifier)
+        || forceTriggerPlanningTables.contains(identifier);
+  }
+
   public void releaseTable(DefaultTableRuntime tableRuntime) {
     scheduler.removeTable(tableRuntime);
     List<OptimizingProcess> processList =
@@ -243,7 +295,8 @@ public class OptimizingQueue extends PersistentBase {
   }
 
   private void scheduleTableIfNecessary(long startTime) {
-    if (planningTables.size() < maxPlanningParallelism) {
+    // 当有强制触发的表时，即使planning并行度已满也允许调度，确保手动触发不被阻塞
+    if (planningTables.size() < maxPlanningParallelism || scheduler.hasForceTriggerTables()) {
       Set<ServerTableIdentifier> skipTables = new HashSet<>(planningTables);
       skipBlockedTables(skipTables);
       Optional.ofNullable(scheduler.scheduleTable(skipTables))
@@ -318,13 +371,30 @@ public class OptimizingQueue extends PersistentBase {
   }
 
   private TableOptimizingProcess planInternal(DefaultTableRuntime tableRuntime) {
+    // 检查是否为强制触发的表，如果是则需要在planning时临时启用优化配置
+    boolean isForceTrigger = forceTriggerPlanningTables.remove(tableRuntime.getTableIdentifier());
+    if (isForceTrigger) {
+      LOG.info(
+          "Force trigger planning for table {}, will temporarily enable optimizing config",
+          tableRuntime.getTableIdentifier());
+    }
     tableRuntime.getOptimizingState().beginPlanning();
+    // 记录原始的enabled状态，planning完成后恢复
+    boolean originalEnabled = tableRuntime.getOptimizingState().getOptimizingConfig().isEnabled();
     try {
       ServerTableIdentifier identifier = tableRuntime.getTableIdentifier();
       AmoroTable<?> table = catalogManager.loadTable(identifier.getIdentifier());
+      DefaultTableRuntime refreshedRuntime = tableRuntime.getOptimizingState().refresh(table);
+      // 在refresh之后、创建planner之前，临时启用优化配置
+      // 因为refresh会从表属性重新读取config，所以必须在refresh之后设置
+      if (isForceTrigger) {
+        // 重新记录refresh后的enabled状态（refresh可能从表属性重新读取了config）
+        originalEnabled = refreshedRuntime.getOptimizingState().getOptimizingConfig().isEnabled();
+        refreshedRuntime.getOptimizingState().getOptimizingConfig().setEnabled(true);
+      }
       AbstractOptimizingPlanner planner =
           IcebergTableUtil.createOptimizingPlanner(
-              tableRuntime.getOptimizingState().refresh(table),
+              refreshedRuntime,
               (MixedTable) table.originalTable(),
               getAvailableCore(),
               maxInputSizePerThread());
@@ -338,6 +408,15 @@ public class OptimizingQueue extends PersistentBase {
       tableRuntime.getOptimizingState().planFailed();
       LOG.error("Planning table {} failed", tableRuntime.getTableIdentifier(), throwable);
       throw throwable;
+    } finally {
+      // 如果是强制触发的表，planning完成后恢复原始的enabled状态
+      if (isForceTrigger) {
+        tableRuntime.getOptimizingState().getOptimizingConfig().setEnabled(originalEnabled);
+        LOG.info(
+            "Restore optimizing config enabled={} for table {} after force trigger planning",
+            originalEnabled,
+            tableRuntime.getTableIdentifier());
+      }
     }
   }
 

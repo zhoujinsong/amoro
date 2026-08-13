@@ -34,6 +34,7 @@ import org.apache.amoro.exception.ObjectNotExistsException;
 import org.apache.amoro.exception.PluginRetryAuthException;
 import org.apache.amoro.resource.ResourceGroup;
 import org.apache.amoro.server.catalog.CatalogManager;
+import org.apache.amoro.server.maintenance.TriggerResult;
 import org.apache.amoro.server.optimizing.OptimizingProcess;
 import org.apache.amoro.server.optimizing.OptimizingQueue;
 import org.apache.amoro.server.optimizing.OptimizingStatus;
@@ -47,6 +48,7 @@ import org.apache.amoro.server.resource.OptimizerInstance;
 import org.apache.amoro.server.resource.OptimizerManager;
 import org.apache.amoro.server.resource.OptimizerThread;
 import org.apache.amoro.server.resource.QuotaProvider;
+import org.apache.amoro.server.table.DefaultOptimizingState;
 import org.apache.amoro.server.table.DefaultTableRuntime;
 import org.apache.amoro.server.table.RuntimeHandlerChain;
 import org.apache.amoro.server.table.TableService;
@@ -288,6 +290,60 @@ public class DefaultOptimizingService extends StatedPersistentBase
     }
     process.close();
     return true;
+  }
+
+  /**
+   * 手动触发表的优化合并。即使 self-optimizing.enabled 为 false 也可以执行。 该方法会将表强制加入调度队列，跳过快照检查和 minPlanInterval 限制。
+   *
+   * @param tableId 表的 ID
+   * @return TriggerResult 触发结果，包含成功/失败的具体原因
+   */
+  public TriggerResult triggerTableOptimizing(long tableId) {
+    DefaultTableRuntime tableRuntime = (DefaultTableRuntime) tableService.getRuntime(tableId);
+    if (tableRuntime == null) {
+      LOG.warn("Table with id {} not found, skip trigger optimizing", tableId);
+      return TriggerResult.TABLE_NOT_FOUND;
+    }
+
+    DefaultOptimizingState optimizingState = tableRuntime.getOptimizingState();
+
+    // 检查表是否已经在优化中
+    if (optimizingState.getOptimizingStatus().isProcessing()) {
+      LOG.warn(
+          "Table {} is already in optimizing status {}, skip trigger",
+          tableRuntime.getTableIdentifier(),
+          optimizingState.getOptimizingStatus());
+      return TriggerResult.ALREADY_OPTIMIZING;
+    }
+
+    // 获取 optimizer group 对应的队列
+    String group = optimizingState.getOptimizerGroup();
+    Optional<OptimizingQueue> queueOpt = getOptionalQueueByGroup(group);
+    if (!queueOpt.isPresent()) {
+      LOG.warn(
+          "Optimizer group {} not found for table {}, skip trigger",
+          group,
+          tableRuntime.getTableIdentifier());
+      return TriggerResult.GROUP_NOT_FOUND;
+    }
+
+    // 检查表是否已经在强制触发的等待队列中（重复触发）
+    if (queueOpt.get().isForceTriggerPending(tableRuntime.getTableIdentifier())) {
+      LOG.info(
+          "Table {} is already pending for force trigger in group {}, skip duplicate trigger",
+          tableRuntime.getTableIdentifier(),
+          group);
+      return TriggerResult.ALREADY_QUEUED;
+    }
+
+    LOG.info(
+        "Manually trigger optimizing for table {} in group {}",
+        tableRuntime.getTableIdentifier(),
+        group);
+
+    // 强制触发优化（绕过 isOptimizingEnabled 检查、快照检查和 minPlanInterval 限制）
+    queueOpt.get().forceTriggerTable(tableRuntime);
+    return TriggerResult.SUCCESS;
   }
 
   /**

@@ -36,6 +36,7 @@ import org.apache.amoro.server.dashboard.JavalinJsonMapper;
 import org.apache.amoro.server.dashboard.response.ErrorResponse;
 import org.apache.amoro.server.dashboard.utils.AmsUtil;
 import org.apache.amoro.server.dashboard.utils.CommonUtil;
+import org.apache.amoro.server.maintenance.DefaultManualMaintenanceService;
 import org.apache.amoro.server.manager.EventsManager;
 import org.apache.amoro.server.manager.MetricManager;
 import org.apache.amoro.server.persistence.DataSourceFactory;
@@ -108,6 +109,7 @@ public class AmoroServiceContainer {
   private Configurations serviceConfig;
   private TServer tableManagementServer;
   private TServer optimizingServiceServer;
+  private DashboardServer dashboardServer;
   private Javalin httpServer;
   private AmsServiceMetrics amsServiceMetrics;
 
@@ -156,6 +158,11 @@ public class AmoroServiceContainer {
 
   public void startRestServices() throws Exception {
     EventsManager.getInstance();
+    // Initialize the metric whitelist filter before any metric class is constructed,
+    // so that MetricManager and the per-table metric classes pick up the configured
+    // profile. See: docs/软件设计/2026-05-29-AMS指标体系精简/.
+    org.apache.amoro.server.metrics.MetricFilterConfig.init(serviceConfig);
+    MetricManager.init(serviceConfig);
     MetricManager.getInstance();
 
     catalogManager = new DefaultCatalogManager(serviceConfig);
@@ -190,6 +197,9 @@ public class AmoroServiceContainer {
     tableService.initialize();
     LOG.info("AMS table service have been initialized");
     tableManager.setTableService(tableService);
+    dashboardServer
+        .getMaintenanceController()
+        .setMaintenanceService(new DefaultManualMaintenanceService(optimizingService));
 
     initThriftService();
     startThriftService();
@@ -204,6 +214,10 @@ public class AmoroServiceContainer {
   }
 
   public void disposeOptimizingService() {
+    // 先清理 maintenanceService，避免在 dispose 过程中有请求操作已销毁的 optimizingService
+    if (dashboardServer != null) {
+      dashboardServer.getMaintenanceController().setMaintenanceService(null);
+    }
     if (tableManagementServer != null && tableManagementServer.isServing()) {
       LOG.info("Stopping table management server...");
       tableManagementServer.stop();
@@ -271,7 +285,7 @@ public class AmoroServiceContainer {
   }
 
   private void initHttpService() {
-    DashboardServer dashboardServer =
+    dashboardServer =
         new DashboardServer(
             serviceConfig, catalogManager, tableManager, optimizerManager, terminalManager);
     RestCatalogService restCatalogService = new RestCatalogService(catalogManager, tableManager);

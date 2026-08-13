@@ -20,6 +20,29 @@ package org.apache.amoro.server.table;
 
 import static org.apache.amoro.metrics.MetricDefine.defineCounter;
 import static org.apache.amoro.metrics.MetricDefine.defineGauge;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_FULL_FAILED_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_FULL_TOTAL_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_LAG_DURATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_MAJOR_FAILED_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_MAJOR_TOTAL_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_MINOR_FAILED_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_MINOR_TOTAL_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_PROCESS_CONSECUTIVE_FAILURES;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_PROCESS_FAILED_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_PROCESS_TOTAL_COUNT;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_SINCE_LAST_FULL_OPTIMIZATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_SINCE_LAST_MAJOR_OPTIMIZATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_SINCE_LAST_MINOR_OPTIMIZATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_COMMITTING_DURATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_EXECUTING_DURATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_IDLE_DURATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_IN_COMMITTING;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_IN_EXECUTING;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_IN_IDLE;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_IN_PENDING;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_IN_PLANNING;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_PENDING_DURATION;
+import static org.apache.amoro.server.metrics.MetricFilterConfig.F_OPT_STATUS_PLANNING_DURATION;
 
 import org.apache.amoro.ServerTableIdentifier;
 import org.apache.amoro.metrics.Counter;
@@ -29,13 +52,20 @@ import org.apache.amoro.metrics.MetricDefine;
 import org.apache.amoro.metrics.MetricKey;
 import org.apache.amoro.optimizing.OptimizingType;
 import org.apache.amoro.server.AmoroServiceConstants;
+import org.apache.amoro.server.metrics.MetricFilterConfig;
 import org.apache.amoro.server.metrics.MetricRegistry;
 import org.apache.amoro.server.optimizing.OptimizingStatus;
 import org.apache.amoro.server.optimizing.maintainer.IcebergTableMaintainer;
 import org.apache.amoro.shade.guava32.com.google.common.collect.ImmutableMap;
+import org.apache.amoro.shade.guava32.com.google.common.collect.Lists;
 import org.apache.amoro.shade.guava32.com.google.common.primitives.Longs;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.SnapshotSummary;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Table self optimizing metrics */
 public class TableOptimizingMetrics extends AbstractTableMetrics {
@@ -95,6 +125,13 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
   public static final MetricDefine TABLE_OPTIMIZING_PROCESS_FAILED_COUNT =
       defineCounter("table_optimizing_process_failed_count")
           .withDescription("Count of failed optimizing process since ams started")
+          .withTags("catalog", "database", "table", "group")
+          .build();
+
+  public static final MetricDefine TABLE_OPTIMIZING_PROCESS_CONSECUTIVE_FAILURES =
+      defineGauge("table_optimizing_process_consecutive_failures")
+          .withDescription(
+              "Number of consecutive failed optimizing processes for the table, reset to 0 on success")
           .withTags("catalog", "database", "table", "group")
           .build();
 
@@ -198,6 +235,7 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
 
   private final Counter processTotalCount = new Counter();
   private final Counter processFailedCount = new Counter();
+  private final AtomicLong consecutiveFailures = new AtomicLong(0);
   private final Counter minorTotalCount = new Counter();
   private final Counter minorFailedCount = new Counter();
   private final Counter majorTotalCount = new Counter();
@@ -213,92 +251,270 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
 
   private String optimizerGroup;
 
+  /**
+   * Snapshot of the {@link MetricFilterConfig} captured at {@link #registerMetrics(MetricRegistry)}
+   * time. Cached to avoid repeatedly calling {@link MetricFilterConfig#current()} on every sync.
+   * Reset to {@code null} in {@link #unregister()}.
+   */
+  private MetricFilterConfig filter;
+
+  /**
+   * Per-table mapping of {@code fieldId -> MetricKey} for the 10 status-class metrics that are
+   * currently registered with the {@link MetricRegistry} via the dynamic value/threshold-based
+   * mechanism. Maintained in lock-step with {@code registeredMetricKeys}: every key here is also in
+   * the parent list, but the reverse is not true (the 13 non-status metrics are eager-only).
+   */
+  private final Map<String, MetricKey> dynamicStatusKeys = new HashMap<>();
+
+  /**
+   * Descriptor list of the 10 status-class metrics, populated once in the constructor. Each entry
+   * holds a single {@code Gauge} instance shared by both the eager-register path and the dynamic
+   * sync path so that scrape values stay consistent regardless of which path registered them.
+   */
+  private final List<StatusEntry> statusEntries;
+
   public TableOptimizingMetrics(ServerTableIdentifier identifier, String optimizerGroup) {
     super(identifier);
     this.optimizerGroup = optimizerGroup;
+    this.statusEntries = buildStatusEntries();
+  }
+
+  private List<StatusEntry> buildStatusEntries() {
+    List<StatusEntry> list = Lists.newArrayListWithCapacity(10);
+    // 5 status_*_duration_mills (threshold from MetricFilterConfig.effectiveStatusThreshold)
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_IDLE_DURATION,
+            TABLE_OPTIMIZING_STATUS_IDLE_DURATION,
+            new StatusDurationGauge(STATUS_IDLE),
+            STATUS_IDLE,
+            false));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_PENDING_DURATION,
+            TABLE_OPTIMIZING_STATUS_PENDING_DURATION,
+            new StatusDurationGauge(STATUS_PENDING),
+            STATUS_PENDING,
+            false));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_PLANNING_DURATION,
+            TABLE_OPTIMIZING_STATUS_PLANNING_DURATION,
+            new StatusDurationGauge(STATUS_PLANING),
+            STATUS_PLANING,
+            false));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_EXECUTING_DURATION,
+            TABLE_OPTIMIZING_STATUS_EXECUTING_DURATION,
+            new StatusDurationGauge(STATUS_EXECUTING),
+            STATUS_EXECUTING,
+            false));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_COMMITTING_DURATION,
+            TABLE_OPTIMIZING_STATUS_COMMITTING_DURATION,
+            new StatusDurationGauge(STATUS_COMMITTING),
+            STATUS_COMMITTING,
+            false));
+    // 5 status_in_* (threshold implicitly 0)
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_IN_IDLE,
+            TABLE_OPTIMIZING_STATUS_IN_IDLE,
+            new IsInStatusGauge(STATUS_IDLE),
+            STATUS_IDLE,
+            true));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_IN_PENDING,
+            TABLE_OPTIMIZING_STATUS_IN_PENDING,
+            new IsInStatusGauge(STATUS_PENDING),
+            STATUS_PENDING,
+            true));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_IN_PLANNING,
+            TABLE_OPTIMIZING_STATUS_IN_PLANNING,
+            new IsInStatusGauge(STATUS_PLANING),
+            STATUS_PLANING,
+            true));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_IN_EXECUTING,
+            TABLE_OPTIMIZING_STATUS_IN_EXECUTING,
+            new IsInStatusGauge(STATUS_EXECUTING),
+            STATUS_EXECUTING,
+            true));
+    list.add(
+        new StatusEntry(
+            F_OPT_STATUS_IN_COMMITTING,
+            TABLE_OPTIMIZING_STATUS_IN_COMMITTING,
+            new IsInStatusGauge(STATUS_COMMITTING),
+            STATUS_COMMITTING,
+            true));
+    return list;
+  }
+
+  /**
+   * Resolve the {@link StatusEntry} for the given fieldId, or {@code null} if not a status-class
+   * field.
+   */
+  private StatusEntry findStatusEntry(String fieldId) {
+    for (StatusEntry e : statusEntries) {
+      if (e.fieldId.equals(fieldId)) {
+        return e;
+      }
+    }
+    return null;
   }
 
   @Override
   protected void registerMetric(MetricRegistry registry, MetricDefine define, Metric metric) {
-    MetricKey key =
-        registry.register(
-            define,
-            ImmutableMap.of(
-                "catalog",
-                identifier.getCatalog(),
-                "database",
-                identifier.getDatabase(),
-                "table",
-                identifier.getTableName(),
-                "group",
-                optimizerGroup),
-            metric);
+    MetricKey key = registry.register(define, tags(), metric);
     registeredMetricKeys.add(key);
+  }
+
+  /** Build the 4-tag map used by every TableOptimizingMetrics series. */
+  private Map<String, String> tags() {
+    return ImmutableMap.of(
+        "catalog", identifier.getCatalog(),
+        "database", identifier.getDatabase(),
+        "table", identifier.getTableName(),
+        "group", optimizerGroup);
   }
 
   @Override
   public void registerMetrics(MetricRegistry registry) {
-    if (globalRegistry == null) {
-      // register status duration metrics
-      registerMetric(
-          registry, TABLE_OPTIMIZING_STATUS_IDLE_DURATION, new StatusDurationGauge(STATUS_IDLE));
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_STATUS_PENDING_DURATION,
-          new StatusDurationGauge(STATUS_PENDING));
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_STATUS_PLANNING_DURATION,
-          new StatusDurationGauge(STATUS_PLANING));
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_STATUS_EXECUTING_DURATION,
-          new StatusDurationGauge(STATUS_EXECUTING));
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_STATUS_COMMITTING_DURATION,
-          new StatusDurationGauge(STATUS_COMMITTING));
-
-      // register table in status metrics
-      registerMetric(registry, TABLE_OPTIMIZING_STATUS_IN_IDLE, new IsInStatusGauge(STATUS_IDLE));
-      registerMetric(
-          registry, TABLE_OPTIMIZING_STATUS_IN_PENDING, new IsInStatusGauge(STATUS_PENDING));
-      registerMetric(
-          registry, TABLE_OPTIMIZING_STATUS_IN_PLANNING, new IsInStatusGauge(STATUS_PLANING));
-      registerMetric(
-          registry, TABLE_OPTIMIZING_STATUS_IN_EXECUTING, new IsInStatusGauge(STATUS_EXECUTING));
-      registerMetric(
-          registry, TABLE_OPTIMIZING_STATUS_IN_COMMITTING, new IsInStatusGauge(STATUS_COMMITTING));
-
-      // register table process count metrics
-      registerMetric(registry, TABLE_OPTIMIZING_PROCESS_TOTAL_COUNT, processTotalCount);
-      registerMetric(registry, TABLE_OPTIMIZING_PROCESS_FAILED_COUNT, processFailedCount);
-      registerMetric(registry, TABLE_OPTIMIZING_MINOR_TOTAL_COUNT, minorTotalCount);
-      registerMetric(registry, TABLE_OPTIMIZING_MINOR_FAILED_COUNT, minorFailedCount);
-      registerMetric(registry, TABLE_OPTIMIZING_MAJOR_TOTAL_COUNT, majorTotalCount);
-      registerMetric(registry, TABLE_OPTIMIZING_MAJOR_FAILED_COUNT, majorFailedCount);
-      registerMetric(registry, TABLE_OPTIMIZING_FULL_TOTAL_COUNT, fullTotalCount);
-      registerMetric(registry, TABLE_OPTIMIZING_FULL_FAILED_COUNT, fullFailedCount);
-
-      // register last optimizing duration metrics
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_SINCE_LAST_MINOR_OPTIMIZATION,
-          new LastOptimizingDurationGauge(OptimizingType.MINOR));
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_SINCE_LAST_MAJOR_OPTIMIZATION,
-          new LastOptimizingDurationGauge(OptimizingType.MAJOR));
-      registerMetric(
-          registry,
-          TABLE_OPTIMIZING_SINCE_LAST_FULL_OPTIMIZATION,
-          new LastOptimizingDurationGauge(OptimizingType.FULL));
-      registerMetric(
-          registry, TABLE_OPTIMIZING_SINCE_LAST_OPTIMIZATION, new LastOptimizingDurationGauge());
-      registerMetric(registry, TABLE_OPTIMIZING_LAG_DURATION, new OptimizingLagDurationGauge());
-
-      globalRegistry = registry;
+    if (globalRegistry != null) {
+      return;
     }
+    this.filter = MetricFilterConfig.current();
+
+    // 10 status-class metrics: when skipZeroStatus is on, the eager register is skipped here.
+    // The dynamic syncStatusMetricsByValue() path (driven by statusChanged() / refresh()) will
+    // register them later as values rise above the effective threshold.
+    for (StatusEntry e : statusEntries) {
+      register(filter, registry, e.fieldId, e.define, e.gauge);
+    }
+
+    // 8 process-count counters (eager regardless of skipZeroStatus).
+    register(
+        filter,
+        registry,
+        F_OPT_PROCESS_TOTAL_COUNT,
+        TABLE_OPTIMIZING_PROCESS_TOTAL_COUNT,
+        processTotalCount);
+    register(
+        filter,
+        registry,
+        F_OPT_PROCESS_FAILED_COUNT,
+        TABLE_OPTIMIZING_PROCESS_FAILED_COUNT,
+        processFailedCount);
+    register(
+        filter,
+        registry,
+        F_OPT_PROCESS_CONSECUTIVE_FAILURES,
+        TABLE_OPTIMIZING_PROCESS_CONSECUTIVE_FAILURES,
+        (Gauge<Long>) consecutiveFailures::get);
+    register(
+        filter,
+        registry,
+        F_OPT_MINOR_TOTAL_COUNT,
+        TABLE_OPTIMIZING_MINOR_TOTAL_COUNT,
+        minorTotalCount);
+    register(
+        filter,
+        registry,
+        F_OPT_MINOR_FAILED_COUNT,
+        TABLE_OPTIMIZING_MINOR_FAILED_COUNT,
+        minorFailedCount);
+    register(
+        filter,
+        registry,
+        F_OPT_MAJOR_TOTAL_COUNT,
+        TABLE_OPTIMIZING_MAJOR_TOTAL_COUNT,
+        majorTotalCount);
+    register(
+        filter,
+        registry,
+        F_OPT_MAJOR_FAILED_COUNT,
+        TABLE_OPTIMIZING_MAJOR_FAILED_COUNT,
+        majorFailedCount);
+    register(
+        filter,
+        registry,
+        F_OPT_FULL_TOTAL_COUNT,
+        TABLE_OPTIMIZING_FULL_TOTAL_COUNT,
+        fullTotalCount);
+    register(
+        filter,
+        registry,
+        F_OPT_FULL_FAILED_COUNT,
+        TABLE_OPTIMIZING_FULL_FAILED_COUNT,
+        fullFailedCount);
+
+    // 5 since_last_* / lag_duration gauges (eager).
+    register(
+        filter,
+        registry,
+        F_OPT_SINCE_LAST_MINOR_OPTIMIZATION,
+        TABLE_OPTIMIZING_SINCE_LAST_MINOR_OPTIMIZATION,
+        new LastOptimizingDurationGauge(OptimizingType.MINOR));
+    register(
+        filter,
+        registry,
+        F_OPT_SINCE_LAST_MAJOR_OPTIMIZATION,
+        TABLE_OPTIMIZING_SINCE_LAST_MAJOR_OPTIMIZATION,
+        new LastOptimizingDurationGauge(OptimizingType.MAJOR));
+    register(
+        filter,
+        registry,
+        F_OPT_SINCE_LAST_FULL_OPTIMIZATION,
+        TABLE_OPTIMIZING_SINCE_LAST_FULL_OPTIMIZATION,
+        new LastOptimizingDurationGauge(OptimizingType.FULL));
+    // [内部分支硬屏蔽] amoro_table_optimizing_since_last_optimization_mills 指标基数大
+    // (~12万 series) 且对运营价值低，为控制 /metrics 响应体积，直接不注册。
+    // 如需恢复，删除本段注释即可。
+    // register(
+    //     filter,
+    //     registry,
+    //     F_OPT_SINCE_LAST_OPTIMIZATION,
+    //     TABLE_OPTIMIZING_SINCE_LAST_OPTIMIZATION,
+    //     new LastOptimizingDurationGauge());
+    register(
+        filter,
+        registry,
+        F_OPT_LAG_DURATION,
+        TABLE_OPTIMIZING_LAG_DURATION,
+        new OptimizingLagDurationGauge());
+
+    globalRegistry = registry;
+  }
+
+  /**
+   * Register the metric only when:
+   *
+   * <ul>
+   *   <li>the field is whitelisted by the current filter, AND
+   *   <li>(for the 10 status-class fields) {@code skipZeroStatus} is off — when it is on, the eager
+   *       registration is intentionally skipped and {@link #syncStatusMetricsByValue()} takes over.
+   * </ul>
+   */
+  private void register(
+      MetricFilterConfig filter,
+      MetricRegistry registry,
+      String field,
+      MetricDefine define,
+      Metric metric) {
+    if (!filter.allowOptimizing(field)) {
+      return;
+    }
+    if (filter.isSkipZeroStatus() && findStatusEntry(field) != null) {
+      // Skip eager register; the dynamic sync path will handle this field later.
+      return;
+    }
+    registerMetric(registry, define, metric);
   }
 
   /**
@@ -310,6 +526,71 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
   public void statusChanged(OptimizingStatus optimizingStatus, long statusSetTimestamp) {
     this.optimizingStatus = optimizingStatus;
     this.statusSetTimestamp = statusSetTimestamp;
+    syncStatusMetricsByValue();
+  }
+
+  /**
+   * Periodic refresh hook driven by {@code DefaultOptimizingState.refresh(AmoroTable)}.
+   * Re-evaluates the value/threshold-based registration of the 10 status-class metrics so that
+   * duration-based threshold crossings (e.g. PENDING > 30 min) are picked up between status-change
+   * events.
+   *
+   * <p>Cheap no-op when {@code skipZeroStatus} is off or the metrics class has not been registered
+   * with a {@link MetricRegistry} yet.
+   */
+  public void refresh() {
+    syncStatusMetricsByValue();
+  }
+
+  /**
+   * Core algorithm: for each of the 10 status-class metrics, decide whether it should be registered
+   * based on its current value vs. effective threshold, and reconcile against the {@link
+   * #dynamicStatusKeys} bookkeeping map.
+   *
+   * <p>Pre-conditions evaluated once at the top to short-circuit the bootstrap-time call from the
+   * second {@code DefaultOptimizingState} constructor (which fires {@code statusChanged} before
+   * {@link #register(MetricRegistry)} runs):
+   *
+   * <ul>
+   *   <li>{@code filter} is non-null (set in {@link #registerMetrics(MetricRegistry)})
+   *   <li>{@code globalRegistry} is non-null (set at the end of the same method)
+   *   <li>{@code skipZeroStatus} is on
+   * </ul>
+   *
+   * <p>Per-entry guard: {@code filter.allowOptimizing(fieldId)} acts as the profile gate. Fields
+   * blacklisted by the active profile (e.g. {@code status_in_idle} under RECOMMENDED) are never
+   * registered regardless of their value.
+   */
+  private void syncStatusMetricsByValue() {
+    if (filter == null || globalRegistry == null || !filter.isSkipZeroStatus()) {
+      return;
+    }
+    for (StatusEntry e : statusEntries) {
+      if (!filter.allowOptimizing(e.fieldId)) {
+        continue;
+      }
+      long value = e.gauge.getValue();
+      long threshold = e.isInGauge ? 0L : filter.effectiveStatusThreshold(e.state);
+      boolean shouldRegister = value > threshold;
+      boolean isRegistered = dynamicStatusKeys.containsKey(e.fieldId);
+
+      if (shouldRegister && !isRegistered) {
+        MetricKey key = globalRegistry.register(e.define, tags(), e.gauge);
+        registeredMetricKeys.add(key);
+        dynamicStatusKeys.put(e.fieldId, key);
+      } else if (!shouldRegister && isRegistered) {
+        MetricKey key = dynamicStatusKeys.remove(e.fieldId);
+        globalRegistry.unregister(key);
+        registeredMetricKeys.remove(key);
+      }
+    }
+  }
+
+  @Override
+  public void unregister() {
+    super.unregister();
+    dynamicStatusKeys.clear();
+    filter = null;
   }
 
   /**
@@ -322,6 +603,11 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
     unregister();
     this.optimizerGroup = optimizerGroup;
     register(metricRegistry);
+    // Re-establish dynamic status metric registrations under the new "group" tag set. Without
+    // this call, status_in_<state> / status_<state>_duration_mills would remain absent until the
+    // next statusChanged() / refresh() — which violates the "current state is always observable"
+    // invariant during a group switch.
+    refresh();
   }
 
   /**
@@ -397,6 +683,10 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
     }
     if (success) {
       lastOptimizingTime(processType, planTime);
+      consecutiveFailures.set(0);
+    } else {
+      processFailedCount.inc();
+      consecutiveFailures.incrementAndGet();
     }
     if (totalCounter != null) {
       totalCounter.inc();
@@ -508,6 +798,29 @@ public class TableOptimizingMetrics extends AbstractTableMetrics {
         return 1L;
       }
       return 0L;
+    }
+  }
+
+  /**
+   * Static descriptor that ties together the four pieces of information needed to evaluate the
+   * dynamic value/threshold-based registration of a single status-class metric. The {@code gauge}
+   * is shared with the eager-register path so that scrape values stay consistent regardless of
+   * which path actually inserted the {@link MetricKey} into the registry.
+   */
+  private static final class StatusEntry {
+    final String fieldId;
+    final MetricDefine define;
+    final Gauge<Long> gauge;
+    final String state;
+    final boolean isInGauge;
+
+    StatusEntry(
+        String fieldId, MetricDefine define, Gauge<Long> gauge, String state, boolean isInGauge) {
+      this.fieldId = fieldId;
+      this.define = define;
+      this.gauge = gauge;
+      this.state = state;
+      this.isInGauge = isInGauge;
     }
   }
 }
