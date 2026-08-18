@@ -177,7 +177,17 @@ public class LanceHiveCatalog implements FormatCatalog {
       request.setProperties(namespaceProperties);
       request.setMode(CREATE_MODE_EXIST_OK);
       // Initialize the catalog in HMS
-      this.hive3Namespace.createNamespace(request);
+      try {
+        this.hive3Namespace.createNamespace(request);
+      } catch (NamespaceAlreadyExistsException e) {
+        LOG.info("HMS catalog already exists, skip creating: {}", name());
+      } catch (Exception e) {
+        if (e.getMessage() != null && e.getMessage().contains("already exists")) {
+          LOG.info("HMS catalog already exists (raced create), skip creating: {}", name());
+        } else {
+          throw e;
+        }
+      }
       LOG.info("Created HMS catalog: " + name());
     }
     LOG.info(

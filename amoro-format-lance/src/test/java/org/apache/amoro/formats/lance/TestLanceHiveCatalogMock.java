@@ -447,6 +447,59 @@ public class TestLanceHiveCatalogMock {
         () -> catalog.deregisterTable(TEST_DATABASE, "non_existent_table"));
   }
 
+  // ==================== Constructor Catalog Creation Fallback Tests ====================
+
+  @Test
+  public void testConstructorCreatesCatalogForNonHiveName() {
+    LanceNamespace nonHiveMockNamespace = mock(LanceNamespace.class);
+
+    LanceHiveCatalog nonHiveCatalog =
+        new LanceHiveCatalog("test_catalog", nonHiveMockNamespace, properties, allocator);
+
+    assertNotNull(nonHiveCatalog);
+    verify(nonHiveMockNamespace).createNamespace(any(CreateNamespaceRequest.class));
+  }
+
+  @Test
+  public void testConstructorCatalogAlreadyExistsIsIgnored() {
+    LanceNamespace nonHiveMockNamespace = mock(LanceNamespace.class);
+    doThrow(new NamespaceAlreadyExistsException("already exists"))
+        .when(nonHiveMockNamespace)
+        .createNamespace(any(CreateNamespaceRequest.class));
+
+    LanceHiveCatalog nonHiveCatalog =
+        new LanceHiveCatalog("test_catalog", nonHiveMockNamespace, properties, allocator);
+
+    assertNotNull(nonHiveCatalog);
+    verify(nonHiveMockNamespace).createNamespace(any(CreateNamespaceRequest.class));
+  }
+
+  @Test
+  public void testConstructorCatalogAlreadyExistsByMessageIsIgnored() {
+    LanceNamespace nonHiveMockNamespace = mock(LanceNamespace.class);
+    doThrow(new RuntimeException("namespace test_catalog already exists"))
+        .when(nonHiveMockNamespace)
+        .createNamespace(any(CreateNamespaceRequest.class));
+
+    LanceHiveCatalog nonHiveCatalog =
+        new LanceHiveCatalog("test_catalog", nonHiveMockNamespace, properties, allocator);
+
+    assertNotNull(nonHiveCatalog);
+    verify(nonHiveMockNamespace).createNamespace(any(CreateNamespaceRequest.class));
+  }
+
+  @Test
+  public void testConstructorCatalogCreationErrorIsPropagated() {
+    LanceNamespace nonHiveMockNamespace = mock(LanceNamespace.class);
+    doThrow(new RuntimeException("connection refused"))
+        .when(nonHiveMockNamespace)
+        .createNamespace(any(CreateNamespaceRequest.class));
+
+    assertThrows(
+        RuntimeException.class,
+        () -> new LanceHiveCatalog("test_catalog", nonHiveMockNamespace, properties, allocator));
+  }
+
   // ==================== Edge Cases ====================
 
   @Test
