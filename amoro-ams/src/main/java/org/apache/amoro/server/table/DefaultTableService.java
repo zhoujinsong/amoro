@@ -454,19 +454,50 @@ public class DefaultTableService extends PersistentBase implements TableService 
     AmoroTable<?> table =
         catalog.loadTable(
             serverTableIdentifier.getDatabase(), serverTableIdentifier.getTableName());
-    if (TableFormat.ICEBERG.equals(table.format())) {
-      if (TablePropertyUtil.isMixedTableStore(table.properties())) {
-        return false;
+    try {
+      if (TableFormat.ICEBERG.equals(table.format())) {
+        if (TablePropertyUtil.isMixedTableStore(table.properties())) {
+          return false;
+        }
       }
+      DefaultTableRuntime tableRuntime =
+          new DefaultTableRuntime(serverTableIdentifier, this, table.properties());
+      tableRuntimeMap.put(serverTableIdentifier.getId(), tableRuntime);
+      tableRuntime.registerMetric(MetricManager.getInstance().getGlobalRegistry());
+      if (headHandler != null) {
+        headHandler.fireTableAdded(table, tableRuntime);
+      }
+      return true;
+    } finally {
+      // Lance Dataset (org.lance.Dataset) holds ArrowBuf/native memory that is not reclaimed by
+      // GC. The table loaded above is only used to read properties and notify handlers (nobody
+      // retains the AmoroTable afterwards), so close the dataset here to avoid leaking native
+      // memory on every newly synced table. See TableRuntimeRefreshExecutor.closeLanceDataset
+      // for the same pattern (reflection avoids a compile-time dependency on the lance module).
+      closeLanceDataset(table);
     }
-    DefaultTableRuntime tableRuntime =
-        new DefaultTableRuntime(serverTableIdentifier, this, table.properties());
-    tableRuntimeMap.put(serverTableIdentifier.getId(), tableRuntime);
-    tableRuntime.registerMetric(MetricManager.getInstance().getGlobalRegistry());
-    if (headHandler != null) {
-      headHandler.fireTableAdded(table, tableRuntime);
+  }
+
+  /**
+   * Close the Lance Dataset held by {@code table.originalTable()} (if any) to release ArrowBuf and
+   * native memory. Invoked via reflection to avoid a compile-time dependency on the lance module.
+   *
+   * <p>Lance Dataset is opened without an explicit allocator (selfManagedAllocator=true), so
+   * Dataset.close() releases all off-heap memory owned by the Dataset.
+   */
+  private void closeLanceDataset(AmoroTable<?> table) {
+    if (table == null || !TableFormat.LANCE.equals(table.format())) {
+      return;
     }
-    return true;
+    Object dataset = table.originalTable();
+    if (dataset == null) {
+      return;
+    }
+    try {
+      dataset.getClass().getMethod("close").invoke(dataset);
+    } catch (Exception e) {
+      LOG.warn("Failed to close Lance dataset for {}", table.id(), e);
+    }
   }
 
   private void revertTableRuntimeAdded(

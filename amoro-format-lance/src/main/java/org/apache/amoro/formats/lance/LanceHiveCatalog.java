@@ -498,6 +498,7 @@ public class LanceHiveCatalog implements FormatCatalog {
     // Use namespace to describe table and get location
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(tableId);
+    request.setLoadDetailedMetadata(false);
     DescribeTableResponse response;
     try {
       response = hive3Namespace.describeTable(request);

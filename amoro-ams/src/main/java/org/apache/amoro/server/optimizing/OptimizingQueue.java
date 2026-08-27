@@ -21,6 +21,7 @@ package org.apache.amoro.server.optimizing;
 import org.apache.amoro.AmoroTable;
 import org.apache.amoro.OptimizerProperties;
 import org.apache.amoro.ServerTableIdentifier;
+import org.apache.amoro.TableFormat;
 import org.apache.amoro.api.BlockableOperation;
 import org.apache.amoro.api.OptimizingTaskId;
 import org.apache.amoro.api.OptimizingTaskResult;
@@ -384,25 +385,33 @@ public class OptimizingQueue extends PersistentBase {
     try {
       ServerTableIdentifier identifier = tableRuntime.getTableIdentifier();
       AmoroTable<?> table = catalogManager.loadTable(identifier.getIdentifier());
-      DefaultTableRuntime refreshedRuntime = tableRuntime.getOptimizingState().refresh(table);
-      // 在refresh之后、创建planner之前，临时启用优化配置
-      // 因为refresh会从表属性重新读取config，所以必须在refresh之后设置
-      if (isForceTrigger) {
-        // 重新记录refresh后的enabled状态（refresh可能从表属性重新读取了config）
-        originalEnabled = refreshedRuntime.getOptimizingState().getOptimizingConfig().isEnabled();
-        refreshedRuntime.getOptimizingState().getOptimizingConfig().setEnabled(true);
-      }
-      AbstractOptimizingPlanner planner =
-          IcebergTableUtil.createOptimizingPlanner(
-              refreshedRuntime,
-              (MixedTable) table.originalTable(),
-              getAvailableCore(),
-              maxInputSizePerThread());
-      if (planner.isNecessary()) {
-        return new TableOptimizingProcess(planner, tableRuntime);
-      } else {
-        tableRuntime.getOptimizingState().completeEmptyProcess();
-        return null;
+      try {
+        DefaultTableRuntime refreshedRuntime = tableRuntime.getOptimizingState().refresh(table);
+        // 在refresh之后、创建planner之前，临时启用优化配置
+        // 因为refresh会从表属性重新读取config，所以必须在refresh之后设置
+        if (isForceTrigger) {
+          // 重新记录refresh后的enabled状态（refresh可能从表属性重新读取了config）
+          originalEnabled = refreshedRuntime.getOptimizingState().getOptimizingConfig().isEnabled();
+          refreshedRuntime.getOptimizingState().getOptimizingConfig().setEnabled(true);
+        }
+        AbstractOptimizingPlanner planner =
+            IcebergTableUtil.createOptimizingPlanner(
+                refreshedRuntime,
+                (MixedTable) table.originalTable(),
+                getAvailableCore(),
+                maxInputSizePerThread());
+        if (planner.isNecessary()) {
+          return new TableOptimizingProcess(planner, tableRuntime);
+        } else {
+          tableRuntime.getOptimizingState().completeEmptyProcess();
+          return null;
+        }
+      } finally {
+        // Lance tables can reach here via manual force-trigger (which bypasses the
+        // optimizing-enabled check); the (MixedTable) cast below would then throw, leaking the
+        // native memory held by the Lance Dataset. Close it defensively — a no-op for
+        // non-Lance formats. Reflection avoids a compile-time dependency on the lance module.
+        closeLanceDataset(table);
       }
     } catch (Throwable throwable) {
       tableRuntime.getOptimizingState().planFailed();
@@ -422,6 +431,26 @@ public class OptimizingQueue extends PersistentBase {
 
   public void ackTask(OptimizingTaskId taskId, OptimizerThread thread) {
     findProcess(taskId).ackTask(taskId, thread);
+  }
+
+  /**
+   * Close the Lance Dataset held by {@code table.originalTable()} (if any) to release ArrowBuf and
+   * native memory. No-op for non-Lance formats. Invoked via reflection to avoid a compile-time
+   * dependency on the lance module (same pattern as TableRuntimeRefreshExecutor.closeLanceDataset).
+   */
+  private void closeLanceDataset(AmoroTable<?> table) {
+    if (table == null || !TableFormat.LANCE.equals(table.format())) {
+      return;
+    }
+    Object dataset = table.originalTable();
+    if (dataset == null) {
+      return;
+    }
+    try {
+      dataset.getClass().getMethod("close").invoke(dataset);
+    } catch (Exception e) {
+      LOG.warn("Failed to close Lance dataset for {}", table.id(), e);
+    }
   }
 
   public void completeTask(OptimizerThread thread, OptimizingTaskResult result) {

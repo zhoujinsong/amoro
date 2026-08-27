@@ -75,8 +75,18 @@ function startAMS() {
   exec "$AMORO_HOME/bin/ams.sh" "start-foreground"
 }
 
+TCLAKE_TCFE_HOSTS_ENTRY="169.254.0.53 tcfe.tclake.tencent.com"
+
+function ensure_tclake_hosts_entry() {
+  if ! grep -q 'tcfe\.tclake\.tencent\.com' /etc/hosts; then
+    echo "${TCLAKE_TCFE_HOSTS_ENTRY}" >> /etc/hosts
+    echo "Appended hosts entry to /etc/hosts: ${TCLAKE_TCFE_HOSTS_ENTRY}"
+  fi
+}
 
 configure_jvm_options
+
+ensure_tclake_hosts_entry
 
 if [ "$MULTI_TENANT_MODE" = "true" ]; then
   echo "Multi-tenant mode enabled, skipping MySQL initialization"

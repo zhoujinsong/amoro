@@ -289,6 +289,7 @@ public class LanceRestCatalog implements FormatCatalog {
   public AmoroTable<?> loadTable(String database, String table) {
     DescribeTableRequest request = new DescribeTableRequest();
     request.setId(tableId(database, table));
+    request.setLoadDetailedMetadata(false);
     DescribeTableResponse response;
     if (cacheEnabled) {
       response =
