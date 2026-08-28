@@ -23,7 +23,7 @@
     <parent>
         <artifactId>amoro-mixed-spark</artifactId>
         <groupId>org.apache.amoro</groupId>
-        <version>tclake-0.9.0-163-SNAPSHOT</version>
+        <version>tclake-0.9.0-162-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>

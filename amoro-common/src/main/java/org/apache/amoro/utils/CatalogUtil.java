@@ -262,17 +262,32 @@ public class CatalogUtil {
             TableFormat.ICEBERG,
             TableFormat.HUDI,
             TableFormat.HIVE_V2,
-            TableFormat.LANCE);
+            TableFormat.LANCE,
+            TableFormat.TCI);
     return supportFormats.containsAll(tableFormats);
+  }
+
+  /**
+   * Check if the given table properties is a TCI-format table
+   *
+   * @param properties properties of the table.
+   * @return true if this is a TCI-format table.
+   */
+  public static boolean isTciTableFormat(Map<String, String> properties) {
+    String tableFormat = properties.get(CatalogMetaProperties.TABLE_FORMAT);
+    return TableFormat.TCI.name().equalsIgnoreCase(tableFormat);
   }
 
   /**
    * Check if the given table properties is a iceberg-format table
    *
    * @param properties properties of the table.
-   * @return true if this is a mixed-format table.
+   * @return true if this is a iceberg-format table.
    */
   public static boolean isIcebergTableFormat(Map<String, String> properties) {
+    if (isTciTableFormat(properties)) {
+      return false;
+    }
     String tableFormat = properties.get(CatalogMetaProperties.TABLE_FORMAT);
     String tableType = properties.getOrDefault(BaseMetastoreTableOperations.TABLE_TYPE_PROP, "");
     return TableFormat.ICEBERG.name().equalsIgnoreCase(tableFormat)

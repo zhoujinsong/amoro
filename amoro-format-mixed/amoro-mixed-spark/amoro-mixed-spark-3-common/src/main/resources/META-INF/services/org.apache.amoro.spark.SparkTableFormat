@@ -20,3 +20,4 @@ org.apache.amoro.spark.mixed.MixedIcebergSparkFormat
 org.apache.amoro.spark.mixed.MixedHiveSparkFormat
 org.apache.amoro.spark.iceberg.IcebergSparkFormat
 org.apache.amoro.spark.paimon.PaimonSparkFormat
+org.apache.amoro.spark.tci.TciSparkTableFormat

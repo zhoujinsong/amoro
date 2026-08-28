@@ -82,6 +82,9 @@ public class IcebergTable implements AmoroTable<UnkeyedTable> {
 
   @Override
   public TableFormat format() {
+    if ("TCI".equalsIgnoreCase(table.properties().get("table-format"))) {
+      return TableFormat.TCI;
+    }
     return TableFormat.ICEBERG;
   }
 

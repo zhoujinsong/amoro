@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.amoro</groupId>
         <artifactId>amoro-format-mixed</artifactId>
-        <version>tclake-0.9.0-163-SNAPSHOT</version>
+        <version>tclake-0.9.0-162-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
