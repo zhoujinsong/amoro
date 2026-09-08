@@ -315,6 +315,8 @@ public class LanceRestCatalog implements FormatCatalog {
       storageOptions.putAll(response.getStorageOptions());
     }
     ReadOptions.Builder optionsBuilder = new ReadOptions.Builder();
+    // Disable tcfe read
+    storageOptions.put("read_tcfe", "false");
     optionsBuilder.setStorageOptions(storageOptions);
     Dataset dataset;
     try {
