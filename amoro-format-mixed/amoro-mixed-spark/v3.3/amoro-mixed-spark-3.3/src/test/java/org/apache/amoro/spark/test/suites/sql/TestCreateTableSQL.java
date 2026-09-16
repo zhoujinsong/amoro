@@ -32,9 +32,13 @@ import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
+import org.apache.spark.sql.catalyst.plans.logical.CreateTable;
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
+import org.apache.spark.sql.catalyst.plans.logical.TableSpec;
 import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -405,5 +409,46 @@ public class TestCreateTableSQL extends MixedTableTestBase {
       Asserts.assertHiveColumns(
           expectSchema, PartitionSpec.unpartitioned(), hiveTable.getSd().getCols());
     }
+  }
+
+  @DisplayName("Test comment contains primary key text without USING clause")
+  @Test
+  @EnableCatalogSelect.SelectCatalog(use = "mixed_iceberg_catalog")
+  public void testCommentWithPrimaryKeyTextWithoutUsingClause() throws Exception {
+    // The plain-text filter in MixedFormatSqlExtensionsParser routes this SQL to the extended
+    // parser since both "create table" and "primary key" appear in the text, but it contains no
+    // real PRIMARY KEY clause. The parsed properties must not be polluted with a mixed-format
+    // default provider.
+    String sqlText =
+        "CREATE TABLE "
+            + target()
+            + "("
+            + "id INT comment 'primary key id',"
+            + "data string"
+            + ") TBLPROPERTIES('key'='value1') comment 'primary key comment'";
+    LogicalPlan plan = spark().sessionState().sqlParser().parsePlan(sqlText);
+    Assertions.assertTrue(plan instanceof CreateTable);
+    TableSpec tableSpec = ((CreateTable) plan).tableSpec();
+    Assertions.assertFalse(tableSpec.properties().contains("provider"));
+    Assertions.assertFalse(tableSpec.properties().contains("primary.keys"));
+  }
+
+  @DisplayName("Test real PRIMARY KEY clause without USING clause keeps mixed-format provider")
+  @Test
+  @EnableCatalogSelect.SelectCatalog(use = "mixed_iceberg_catalog")
+  public void testPrimaryKeyClauseWithoutUsingClause() throws Exception {
+    String sqlText =
+        "CREATE TABLE "
+            + target()
+            + "("
+            + "id INT,"
+            + "data string,"
+            + "PRIMARY KEY(id)"
+            + ") TBLPROPERTIES('key'='value1')";
+    LogicalPlan plan = spark().sessionState().sqlParser().parsePlan(sqlText);
+    Assertions.assertTrue(plan instanceof CreateTable);
+    TableSpec tableSpec = ((CreateTable) plan).tableSpec();
+    Assertions.assertEquals("arctic", tableSpec.properties().get("provider").get());
+    Assertions.assertEquals("id", tableSpec.properties().get("primary.keys").get());
   }
 }

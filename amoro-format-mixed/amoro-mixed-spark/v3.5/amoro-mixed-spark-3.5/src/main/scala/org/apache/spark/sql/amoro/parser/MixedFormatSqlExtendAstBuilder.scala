@@ -175,12 +175,18 @@ class MixedFormatSqlExtendAstBuilder()
 
   /**
    * Build a properties with primary key.
+   *
+   * The mixed-format default provider is injected only when the PRIMARY KEY clause is explicitly
+   * specified. Otherwise, a CREATE TABLE statement whose column comment happens to contain the
+   * text "primary key" would be misrouted to this extended parser by the plain-text filter in
+   * [[org.apache.amoro.spark.sql.catalyst.parser.MixedFormatSqlExtensionsParser]] and silently
+   * polluted with a mixed-format provider.
    */
   private def buildProperties(primary: Seq[String], properties: Map[String, String]) = {
     var propertiesMap: Map[String, String] = properties
-    propertiesMap += ("provider" -> "arctic")
     val primaryMap = seqAsJavaList(primary)
-    if (primaryMap != null) {
+    if (primaryMap != null && !primaryMap.isEmpty) {
+      propertiesMap += ("provider" -> "arctic")
       propertiesMap += ("primary.keys" -> String.join(",", primaryMap))
     }
     propertiesMap

@@ -32,9 +32,13 @@ import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
+import org.apache.spark.sql.catalyst.plans.logical.CreateTable;
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
+import org.apache.spark.sql.catalyst.plans.logical.TableSpecBase;
 import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -339,34 +343,41 @@ public class TestCreateTableSQL extends MixedTableTestBase {
     Types.NestedField pt = Types.NestedField.optional(11, "pt", Types.StringType.get());
 
     return Stream.of(
+        // Without a real PRIMARY KEY clause, creating a mixed-format table is rejected with
+        // "Primary key is required" instead of silently creating a keyed table with empty
+        // primary keys polluted by the comment text.
         Arguments.of(
             TableFormat.MIXED_ICEBERG,
             structDDL,
             "TBLPROPERTIES('key'='value1', 'catalog'='INTERNAL')",
             new Schema(Lists.newArrayList(id, data, point, map, array, pt)),
             ImmutableMap.of("key", "value1", "catalog", "INTERNAL"),
-            "primary key comment"),
+            "primary key comment",
+            true),
         Arguments.of(
             TableFormat.MIXED_ICEBERG,
             structDDL + ", PRIMARY KEY(id)",
             "TBLPROPERTIES('key'='value1', 'catalog'='INTERNAL')",
             new Schema(Lists.newArrayList(id.asRequired(), data, point, map, array, pt)),
             ImmutableMap.of("key", "value1", "catalog", "INTERNAL"),
-            "primary key comment"),
+            "primary key comment",
+            false),
         Arguments.of(
             TableFormat.MIXED_HIVE,
             structDDL,
             "tblproperties('key'='value1', 'catalog'='hive')",
             new Schema(Lists.newArrayList(id, data, point, map, array, pt)),
             ImmutableMap.of("key", "value1", "catalog", "hive"),
-            "Primary key comment"),
+            "Primary key comment",
+            true),
         Arguments.of(
             TableFormat.MIXED_HIVE,
             structDDL + ", PRIMARY KEY(id)",
             "tblproperties('key'='value1', 'catalog'='hive')",
             new Schema(Lists.newArrayList(id.asRequired(), data, point, map, array, pt)),
             ImmutableMap.of("key", "value1", "catalog", "hive"),
-            "Primary key comment"));
+            "Primary key comment",
+            false));
   }
 
   @DisplayName("Test comment contains primary key")
@@ -378,7 +389,8 @@ public class TestCreateTableSQL extends MixedTableTestBase {
       String propertiesDDL,
       Schema expectSchema,
       Map<String, String> expectProperties,
-      String tableComment) {
+      String tableComment,
+      boolean expectPrimaryKeyRequired) {
     spark().conf().set(SparkSQLProperties.USE_TIMESTAMP_WITHOUT_TIME_ZONE_IN_NEW_TABLES, false);
     String sqlText =
         "CREATE TABLE "
@@ -392,6 +404,12 @@ public class TestCreateTableSQL extends MixedTableTestBase {
             + " comment '"
             + tableComment
             + "'";
+    if (expectPrimaryKeyRequired) {
+      IllegalArgumentException exception =
+          Assertions.assertThrows(IllegalArgumentException.class, () -> sql(sqlText));
+      Assertions.assertTrue(exception.getMessage().contains("Primary key is required"));
+      return;
+    }
     sql(sqlText);
 
     MixedTable tbl = loadTable();
@@ -404,5 +422,46 @@ public class TestCreateTableSQL extends MixedTableTestBase {
       Asserts.assertHiveColumns(
           expectSchema, PartitionSpec.unpartitioned(), hiveTable.getSd().getCols());
     }
+  }
+
+  @DisplayName("Test comment contains primary key text without USING clause")
+  @Test
+  @EnableCatalogSelect.SelectCatalog(use = "mixed_iceberg_catalog")
+  public void testCommentWithPrimaryKeyTextWithoutUsingClause() throws Exception {
+    // The plain-text filter in MixedFormatSqlExtensionsParser routes this SQL to the extended
+    // parser since both "create table" and "primary key" appear in the text, but it contains no
+    // real PRIMARY KEY clause. The parsed properties must not be polluted with a mixed-format
+    // default provider.
+    String sqlText =
+        "CREATE TABLE "
+            + target()
+            + "("
+            + "id INT comment 'primary key id',"
+            + "data string"
+            + ") TBLPROPERTIES('key'='value1') comment 'primary key comment'";
+    LogicalPlan plan = spark().sessionState().sqlParser().parsePlan(sqlText);
+    Assertions.assertTrue(plan instanceof CreateTable);
+    TableSpecBase tableSpec = ((CreateTable) plan).tableSpec();
+    Assertions.assertFalse(tableSpec.properties().contains("provider"));
+    Assertions.assertFalse(tableSpec.properties().contains("primary.keys"));
+  }
+
+  @DisplayName("Test real PRIMARY KEY clause without USING clause keeps mixed-format provider")
+  @Test
+  @EnableCatalogSelect.SelectCatalog(use = "mixed_iceberg_catalog")
+  public void testPrimaryKeyClauseWithoutUsingClause() throws Exception {
+    String sqlText =
+        "CREATE TABLE "
+            + target()
+            + "("
+            + "id INT,"
+            + "data string,"
+            + "PRIMARY KEY(id)"
+            + ") TBLPROPERTIES('key'='value1')";
+    LogicalPlan plan = spark().sessionState().sqlParser().parsePlan(sqlText);
+    Assertions.assertTrue(plan instanceof CreateTable);
+    TableSpecBase tableSpec = ((CreateTable) plan).tableSpec();
+    Assertions.assertEquals("arctic", tableSpec.properties().get("provider").get());
+    Assertions.assertEquals("id", tableSpec.properties().get("primary.keys").get());
   }
 }
