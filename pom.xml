@@ -157,7 +157,7 @@
         <annotation-api.version>1.3.2</annotation-api.version>
         <guava.version>32.1.1-jre</guava.version>
         <hudi.version>0.14.1</hudi.version>
-        <lance.version>6.0.1-glibc228-SNAPSHOT</lance.version>
+        <lance.version>6.0.1-glibc217-SNAPSHOT</lance.version>
         <lance-namespace.version>0.7.5</lance-namespace.version>
         <lance-namespace-impls.version>0.2.0</lance-namespace-impls.version>
         <pagehelper.version>6.1.0</pagehelper.version>

@@ -458,15 +458,19 @@ public class TableController {
         ctx.queryParamAsClass("operation", String.class)
             .getOrDefault(OperationType.ALL.displayName());
     OperationType operationType = OperationType.of(operation);
+    Preconditions.checkArgument(page >= 1, "page[%s] must >= 1", page);
+    Preconditions.checkArgument(pageSize >= 0, "pageSize[%s] must >= 0", pageSize);
+    int offset = Math.multiplyExact(page - 1, pageSize);
 
-    List<AmoroSnapshotsOfTable> snapshotsOfTables =
+    Pair<List<AmoroSnapshotsOfTable>, Integer> snapshotsOfTables =
         tableDescriptor.getSnapshots(
             TableIdentifier.of(catalog, database, tableName).buildTableIdentifier(),
             ref,
-            operationType);
-    int offset = (page - 1) * pageSize;
+            operationType,
+            pageSize,
+            offset);
     PageResult<AmoroSnapshotsOfTable> pageResult =
-        PageResult.of(snapshotsOfTables, offset, pageSize);
+        PageResult.of(snapshotsOfTables.getLeft(), snapshotsOfTables.getRight());
     ctx.json(OkResponse.of(pageResult));
   }
 

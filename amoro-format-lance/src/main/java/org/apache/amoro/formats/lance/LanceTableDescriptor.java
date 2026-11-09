@@ -36,6 +36,7 @@ import org.apache.amoro.table.descriptor.PartitionFileBaseInfo;
 import org.apache.amoro.table.descriptor.ServerTableMeta;
 import org.apache.amoro.table.descriptor.TableSummary;
 import org.apache.amoro.table.descriptor.TagOrBranchInfo;
+import org.apache.amoro.utils.CommonUtil;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.commons.lang3.tuple.Pair;
@@ -43,6 +44,7 @@ import org.lance.Branch;
 import org.lance.Dataset;
 import org.lance.Fragment;
 import org.lance.FragmentMetadata;
+import org.lance.ListVersionsOptions;
 import org.lance.ManifestSummary;
 import org.lance.Tag;
 import org.lance.Version;
@@ -52,10 +54,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
@@ -89,14 +97,21 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
   private static final String METRIC_DELETION_FILE_COUNT = "deletionFileCount";
   private static final String METRIC_FRAGMENT_COUNT = "fragmentCount";
   private static final String METRIC_AVERAGE_FILE_SIZE = "averageFileSize";
+
   // versionSummary key constants
   private static final String SUMMARY_VERSION = "version";
-  private static final String SUMMARY_TOTAL_ROWS = "totalRows";
-  private static final String SUMMARY_TOTAL_DATA_FILES = "totalDataFiles";
-  private static final String SUMMARY_TOTAL_FILES_SIZE = "totalFilesSize";
-  private static final String SUMMARY_TOTAL_FRAGMENTS = "totalFragments";
-  private static final String SUMMARY_TOTAL_DELETION_FILES = "totalDeletionFiles";
-  private static final String SUMMARY_TOTAL_DELETION_FILE_ROWS = "totalDeletionFileRows";
+  private static final String SUMMARY_TOTAL_RECORDS = "total-records";
+  private static final String SUMMARY_TOTAL_DATA_FILES = "total-data-files";
+  private static final String SUMMARY_TOTAL_FILES_SIZE = "total-files-size";
+  private static final String SUMMARY_TOTAL_FRAGMENTS = "total-fragments";
+  private static final String SUMMARY_TOTAL_DELETE_FILES = "total-delete-files";
+  private static final String SUMMARY_TOTAL_DELETION_FILE_ROWS = "total-deletion-file-rows";
+  // Only attached to the latest snapshot
+  private static final String SUMMARY_TOTAL_INDEXES = "total-indexes";
+  // Lance system indexes that are maintained internally and should not be counted as user indexes
+  private static final Set<String> SYSTEM_INDEX_NAMES =
+      Collections.unmodifiableSet(
+          new HashSet<>(Arrays.asList("__lance_frag_reuse", "__lance_mem_wal")));
 
   private static final String CHART_TOTAL_RECORDS = "total-records";
   private static final String CHART_TOTAL_DELETE_RECORDS = "total-delete-records";
@@ -208,56 +223,13 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
     }
     Dataset dataset = getDataset(amoroTable);
     try {
-      List<AmoroSnapshotsOfTable> snapshots = new ArrayList<>();
+      // Sort by version id in descending order so that the latest version comes first
+      List<Version> versions = new ArrayList<>(dataset.listVersions());
+      versions.sort(Comparator.comparingLong(Version::getId).reversed());
 
-      List<Version> versions = dataset.listVersions();
-      for (Version version : versions) {
-        ManifestSummary summary = version.getManifestSummary();
+      List<AmoroSnapshotsOfTable> snapshots = buildSnapshots(versions);
+      attachIndexCountToLatest(dataset, snapshots);
 
-        Map<String, String> versionSummary = new HashMap<>();
-        versionSummary.put(SUMMARY_VERSION, String.valueOf(version.getId()));
-        versionSummary.put(SUMMARY_TOTAL_ROWS, String.valueOf(summary.getTotalRows()));
-        versionSummary.put(SUMMARY_TOTAL_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
-        versionSummary.put(SUMMARY_TOTAL_FILES_SIZE, String.valueOf(summary.getTotalFilesSize()));
-        versionSummary.put(SUMMARY_TOTAL_FRAGMENTS, String.valueOf(summary.getTotalFragments()));
-        versionSummary.put(
-            SUMMARY_TOTAL_DELETION_FILES, String.valueOf(summary.getTotalDeletionFiles()));
-        versionSummary.put(
-            SUMMARY_TOTAL_DELETION_FILE_ROWS, String.valueOf(summary.getTotalDeletionFileRows()));
-
-        // Convert ZonedDateTime to epoch millis
-        long commitTime =
-            version.getDataTime() != null ? version.getDataTime().toInstant().toEpochMilli() : 0L;
-
-        // Total file count = data files + deletion files
-        long totalFileCount = summary.getTotalDataFiles() + summary.getTotalDeletionFiles();
-
-        AmoroSnapshotsOfTable snapshot =
-            new AmoroSnapshotsOfTable(
-                String.valueOf(version.getId()),
-                (int) totalFileCount,
-                summary.getTotalFilesSize(),
-                summary.getTotalRows(),
-                commitTime,
-                OPERATION_TYPE_APPEND,
-                STORAGE_TYPE_TCLAKE,
-                versionSummary);
-
-        Map<String, String> recordsSummaryForChart = new HashMap<>();
-        recordsSummaryForChart.put(CHART_TOTAL_RECORDS, String.valueOf(summary.getTotalRows()));
-        recordsSummaryForChart.put(
-            CHART_TOTAL_DELETE_RECORDS, String.valueOf(summary.getTotalDeletionFileRows()));
-        snapshot.setRecordsSummaryForChart(recordsSummaryForChart);
-
-        Map<String, String> filesSummaryForChart = new HashMap<>();
-        filesSummaryForChart.put(CHART_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
-        filesSummaryForChart.put(
-            CHART_DELETE_FILES, String.valueOf(summary.getTotalDeletionFiles()));
-        filesSummaryForChart.put(CHART_TOTAL_FILES, String.valueOf(totalFileCount));
-        snapshot.setFilesSummaryForChart(filesSummaryForChart);
-
-        snapshots.add(snapshot);
-      }
       LOG.info(
           "getSnapshots cost: table={}, snapshots={}, elapsed={}ms",
           amoroTable.id(),
@@ -267,6 +239,162 @@ public class LanceTableDescriptor implements FormatTableDescriptor {
     } finally {
       closeDataset(dataset);
     }
+  }
+
+  /**
+   * Read only the requested page of versions (newest first) instead of every manifest. The total is
+   * counted by listing manifest locations without reading them.
+   */
+  @Override
+  public Pair<List<AmoroSnapshotsOfTable>, Integer> getSnapshots(
+      AmoroTable<?> amoroTable, String ref, OperationType operationType, int limit, int offset) {
+    long start = System.currentTimeMillis();
+    if (LanceProperties.isEmptyLanceTable(amoroTable)) {
+      LOG.info("getSnapshots skipped: empty Lance table {}", amoroTable.id());
+      return Pair.of(Collections.emptyList(), 0);
+    }
+    Dataset dataset = getDataset(amoroTable);
+    try {
+      long total = dataset.getVersionCount();
+      List<Version> versions =
+          limit == 0 || offset >= total
+              ? Collections.emptyList()
+              : dataset.listVersions(
+                  ListVersionsOptions.builder()
+                      .descending(true)
+                      .offset(offset)
+                      .limit(limit)
+                      .build());
+
+      List<AmoroSnapshotsOfTable> snapshots = buildSnapshots(versions);
+      if (offset == 0) {
+        attachIndexCountToLatest(dataset, snapshots);
+      }
+
+      LOG.info(
+          "getSnapshots page cost: table={}, offset={}, limit={}, snapshots={}, total={},"
+              + " elapsed={}ms",
+          amoroTable.id(),
+          offset,
+          limit,
+          snapshots.size(),
+          total,
+          System.currentTimeMillis() - start);
+      return Pair.of(snapshots, (int) Math.min(total, Integer.MAX_VALUE));
+    } finally {
+      closeDataset(dataset);
+    }
+  }
+
+  /** Build snapshot entries in the same order as the given versions. */
+  private List<AmoroSnapshotsOfTable> buildSnapshots(List<Version> versions) {
+    List<AmoroSnapshotsOfTable> snapshots = new ArrayList<>(versions.size());
+    if (executor == null) {
+      for (Version version : versions) {
+        snapshots.add(buildSnapshot(version));
+      }
+      return snapshots;
+    }
+    List<CompletableFuture<AmoroSnapshotsOfTable>> futures = new ArrayList<>(versions.size());
+    for (Version version : versions) {
+      futures.add(CompletableFuture.supplyAsync(() -> buildSnapshot(version), executor));
+    }
+    for (CompletableFuture<AmoroSnapshotsOfTable> future : futures) {
+      try {
+        snapshots.add(future.get());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Interrupted while loading Lance snapshots", e);
+      } catch (ExecutionException e) {
+        throw new RuntimeException("Failed to load Lance snapshot", e.getCause());
+      }
+    }
+    return snapshots;
+  }
+
+  /**
+   * Attach the index count to the latest snapshot only. Indexes are read from the current version
+   * of the opened dataset, so loading indexes of historical versions (which would require a
+   * checkout per version) is avoided. Failure to read indexes does not fail the whole request.
+   *
+   * @param dataset dataset opened at its latest version
+   * @param snapshots snapshots sorted by version in descending order
+   */
+  private void attachIndexCountToLatest(Dataset dataset, List<AmoroSnapshotsOfTable> snapshots) {
+    if (snapshots.isEmpty()) {
+      return;
+    }
+    AmoroSnapshotsOfTable latest = snapshots.get(0);
+    if (!String.valueOf(dataset.version()).equals(latest.getSnapshotId())) {
+      // The dataset is not opened at the latest listed version; skip to avoid a mismatched count
+      return;
+    }
+    try {
+      latest.getSummary().put(SUMMARY_TOTAL_INDEXES, String.valueOf(countUserIndexes(dataset)));
+    } catch (Exception e) {
+      LOG.warn("Failed to load Lance indexes for version {}", latest.getSnapshotId(), e);
+    }
+  }
+
+  /**
+   * Count logical user indexes. {@link Dataset#listIndexes()} returns one entry per index segment
+   * (delta indexes share the same name) and includes Lance system indexes, so names are
+   * de-duplicated and system indexes are excluded.
+   */
+  private static int countUserIndexes(Dataset dataset) {
+    List<String> indexNames = dataset.listIndexes();
+    if (indexNames == null) {
+      return 0;
+    }
+    return (int)
+        indexNames.stream().filter(name -> !SYSTEM_INDEX_NAMES.contains(name)).distinct().count();
+  }
+
+  /** Build a single snapshot entry from a Lance version. */
+  private AmoroSnapshotsOfTable buildSnapshot(Version version) {
+    ManifestSummary summary = version.getManifestSummary();
+
+    Map<String, String> versionSummary = new HashMap<>();
+    versionSummary.put(SUMMARY_VERSION, String.valueOf(version.getId()));
+    versionSummary.put(SUMMARY_TOTAL_RECORDS, String.valueOf(summary.getTotalRows()));
+    versionSummary.put(SUMMARY_TOTAL_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
+    versionSummary.put(SUMMARY_TOTAL_FILES_SIZE, CommonUtil.byteToXB(summary.getTotalFilesSize()));
+    versionSummary.put(SUMMARY_TOTAL_FRAGMENTS, String.valueOf(summary.getTotalFragments()));
+    versionSummary.put(SUMMARY_TOTAL_DELETE_FILES, String.valueOf(summary.getTotalDeletionFiles()));
+    versionSummary.put(
+        SUMMARY_TOTAL_DELETION_FILE_ROWS, String.valueOf(summary.getTotalDeletionFileRows()));
+
+    // Convert ZonedDateTime to epoch millis
+    long commitTime =
+        version.getDataTime() != null ? version.getDataTime().toInstant().toEpochMilli() : 0L;
+
+    // Total file count = data files + deletion files
+    long totalFileCount = summary.getTotalDataFiles() + summary.getTotalDeletionFiles();
+
+    AmoroSnapshotsOfTable snapshot =
+        new AmoroSnapshotsOfTable(
+            String.valueOf(version.getId()),
+            (int) totalFileCount,
+            summary.getTotalFilesSize(),
+            summary.getTotalRows(),
+            commitTime,
+            OPERATION_TYPE_APPEND,
+            STORAGE_TYPE_TCLAKE,
+            versionSummary);
+
+    Map<String, String> recordsSummaryForChart = new HashMap<>();
+    recordsSummaryForChart.put(CHART_TOTAL_RECORDS, String.valueOf(summary.getTotalRows()));
+    recordsSummaryForChart.put(
+        CHART_TOTAL_DELETE_RECORDS, String.valueOf(summary.getTotalDeletionFileRows()));
+    snapshot.setRecordsSummaryForChart(recordsSummaryForChart);
+
+    Map<String, String> filesSummaryForChart = new HashMap<>();
+    filesSummaryForChart.put(CHART_DATA_FILES, String.valueOf(summary.getTotalDataFiles()));
+    filesSummaryForChart.put(CHART_DELETE_FILES, String.valueOf(summary.getTotalDeletionFiles()));
+    filesSummaryForChart.put(CHART_TOTAL_FILES, String.valueOf(totalFileCount));
+    snapshot.setFilesSummaryForChart(filesSummaryForChart);
+
+    return snapshot;
   }
 
   @Override

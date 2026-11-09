@@ -77,11 +77,15 @@ public class ServerTableDescriptor extends PersistentBase {
     return formatTableDescriptor.getTableDetail(amoroTable);
   }
 
-  public List<AmoroSnapshotsOfTable> getSnapshots(
-      TableIdentifier tableIdentifier, String ref, OperationType operationType) {
+  public Pair<List<AmoroSnapshotsOfTable>, Integer> getSnapshots(
+      TableIdentifier tableIdentifier,
+      String ref,
+      OperationType operationType,
+      int limit,
+      int offset) {
     AmoroTable<?> amoroTable = loadTable(tableIdentifier);
     FormatTableDescriptor formatTableDescriptor = formatDescriptorMap.get(amoroTable.format());
-    return formatTableDescriptor.getSnapshots(amoroTable, ref, operationType);
+    return formatTableDescriptor.getSnapshots(amoroTable, ref, operationType, limit, offset);
   }
 
   public List<PartitionFileBaseInfo> getSnapshotDetail(

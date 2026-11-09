@@ -26,6 +26,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
 
 /** API for obtaining metadata information of various formats. */
 public interface FormatTableDescriptor {
@@ -46,6 +47,25 @@ public interface FormatTableDescriptor {
   /** Get the snapshot information of the {@link AmoroTable}. */
   List<AmoroSnapshotsOfTable> getSnapshots(
       AmoroTable<?> amoroTable, String ref, OperationType operationType);
+
+  /**
+   * Get one page of the snapshot information of the {@link AmoroTable} and the total number of
+   * snapshots. Snapshots are in the same order as {@link #getSnapshots(AmoroTable, String,
+   * OperationType)}.
+   *
+   * <p>The default implementation loads all snapshots and slices them in memory. Formats that can
+   * read a page of snapshots directly should override it.
+   *
+   * @param limit maximum number of snapshots to return, must be non-negative
+   * @param offset number of snapshots to skip, must be non-negative
+   */
+  default Pair<List<AmoroSnapshotsOfTable>, Integer> getSnapshots(
+      AmoroTable<?> amoroTable, String ref, OperationType operationType, int limit, int offset) {
+    List<AmoroSnapshotsOfTable> snapshots = getSnapshots(amoroTable, ref, operationType);
+    List<AmoroSnapshotsOfTable> page =
+        snapshots.stream().skip(offset).limit(limit).collect(Collectors.toList());
+    return Pair.of(page, snapshots.size());
+  }
 
   /** Get the snapshot detail information of the {@link AmoroTable}. */
   List<PartitionFileBaseInfo> getSnapshotDetail(
