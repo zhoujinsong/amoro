@@ -98,7 +98,11 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
 
   private volatile Catalog cachedCatalog;
 
-  private Cache<String, Optional<String>> tableFormatCache;
+  /**
+   * {@code schema.table} -&gt; raw format. Only tables that carry a format are cached, so a table
+   * that is created right after being probed as missing is visible on the next lookup.
+   */
+  private volatile Cache<String, String> tableFormatCache;
 
   /** Constructor used when the catalog is refreshable from a live {@link CatalogMeta} source. */
   public GravitinoUnifiedCatalog(
@@ -161,12 +165,7 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
 
   private void initCaches(Map<String, String> properties) {
     this.cacheEnabled = GravitinoUnifiedCatalogProperties.cacheEnabled(properties);
-    this.tableFormatCache =
-        Caffeine.newBuilder()
-            .expireAfterWrite(
-                GravitinoUnifiedCatalogProperties.formatCacheTtlMin(properties), TimeUnit.MINUTES)
-            .maximumSize(GravitinoUnifiedCatalogProperties.formatCacheMaxSize(properties))
-            .build();
+    this.tableFormatCache = newFormatCache(properties);
     this.cachedCatalog = null;
     LOG.info(
         "Initialized Gravitino metadata caches for {}.{}: enabled={}, catalogCache=permanent, "
@@ -177,12 +176,25 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
         GravitinoUnifiedCatalogProperties.formatCacheTtlMin(properties));
   }
 
-  /** Clears all cached metadata. Called from {@link #refresh()} and on demand. */
+  private static Cache<String, String> newFormatCache(Map<String, String> properties) {
+    return Caffeine.newBuilder()
+        .expireAfterWrite(
+            GravitinoUnifiedCatalogProperties.formatCacheTtlMin(properties), TimeUnit.MINUTES)
+        .maximumSize(GravitinoUnifiedCatalogProperties.formatCacheMaxSize(properties))
+        .build();
+  }
+
+  /**
+   * Clears all cached metadata. Called from {@link #refresh()} and on demand.
+   *
+   * <p>The format cache is swapped for a new instance instead of {@code invalidateAll()}: clearing
+   * locks every Caffeine hash bin while this monitor is held, whereas a cache loader holds its bin
+   * and then needs this monitor in {@link #gravitinoCatalog()}, which deadlocked AMS. Loads still
+   * in flight complete against the orphaned instance, so their pre-refresh results are dropped too.
+   */
   private synchronized void invalidateCaches() {
     this.cachedCatalog = null;
-    if (tableFormatCache != null) {
-      tableFormatCache.invalidateAll();
-    }
+    this.tableFormatCache = newFormatCache(catalogProperties);
   }
 
   /** Invalidates the cached format entry for a single table. */
@@ -428,7 +440,10 @@ public class GravitinoUnifiedCatalog implements UnifiedCatalog {
     if (!cacheEnabled) {
       return doDescribeTableFormat(schema, table);
     }
-    return tableFormatCache.get(schema + "." + table, k -> doDescribeTableFormat(schema, table));
+    // A null loader result is not stored by Caffeine, i.e. missing tables are never cached.
+    return Optional.ofNullable(
+        tableFormatCache.get(
+            schema + "." + table, k -> doDescribeTableFormat(schema, table).orElse(null)));
   }
 
   private Optional<String> doDescribeTableFormat(String schema, String table) {

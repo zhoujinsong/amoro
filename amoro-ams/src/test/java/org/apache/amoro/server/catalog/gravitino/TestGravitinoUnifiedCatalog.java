@@ -53,6 +53,9 @@ import org.junit.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TestGravitinoUnifiedCatalog {
 
@@ -540,14 +543,49 @@ public class TestGravitinoUnifiedCatalog {
   }
 
   @Test
-  public void testFormatNegativeCacheAvoidsRepeatedProbe() {
+  public void testMissingTableIsNotCached() {
     // Default mock returns a table with null format for any loadTable.
     GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
 
-    assertFalse(catalog.tableExists("db1", "missing"));
-    assertFalse(catalog.tableExists("db1", "missing"));
+    assertFalse(catalog.tableExists("db1", "t_new"));
+    // Created right after being probed: must be visible on the very next lookup.
+    stubTable("db1", "t_new", "lance");
+    assertTrue(catalog.tableExists("db1", "t_new"));
+    assertTrue(catalog.tableExists("db1", "t_new"));
 
-    verify(tableCatalog, times(1)).loadTable(NameIdentifier.of(Namespace.of("db1"), "missing"));
+    verify(tableCatalog, times(2)).loadTable(NameIdentifier.of(Namespace.of("db1"), "t_new"));
+  }
+
+  @Test(timeout = 30_000)
+  public void testRefreshDropsResultOfInFlightLoad() throws Exception {
+    CountDownLatch loading = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicInteger calls = new AtomicInteger();
+    Table iceberg = tableWithFormat("iceberg");
+    Table lance = tableWithFormat("lance");
+    when(tableCatalog.loadTable(NameIdentifier.of(Namespace.of("db1"), "t1")))
+        .thenAnswer(
+            invocation -> {
+              if (calls.getAndIncrement() == 0) {
+                loading.countDown();
+                release.await(10, TimeUnit.SECONDS);
+                return iceberg;
+              }
+              return lance;
+            });
+    GravitinoUnifiedCatalog catalog = newCatalog(Maps.newHashMap());
+
+    Thread inFlight = new Thread(() -> catalog.loadTableFormat("db1", "t1"));
+    inFlight.setDaemon(true);
+    inFlight.start();
+    assertTrue(loading.await(10, TimeUnit.SECONDS));
+    // refresh() must neither wait for the in-flight load nor let its pre-refresh answer survive.
+    catalog.refresh();
+    release.countDown();
+    inFlight.join(10_000L);
+    assertFalse(inFlight.isAlive());
+
+    assertEquals(TableFormat.LANCE, catalog.loadTableFormat("db1", "t1"));
   }
 
   @Test
