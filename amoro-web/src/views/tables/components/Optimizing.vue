@@ -91,6 +91,8 @@ const actionType = ref<ILableAndValue>()
 const actionTypeList = ref<ILableAndValue[]>([])
 const statusType = ref<ILableAndValue>()
 const statusTypeList = ref<ILableAndValue[]>([])
+const taskStatusType = ref<ILableAndValue>()
+const taskStatusTypeList = ref<ILableAndValue[]>([])
 
 async function getQueryDataDictList() {
   const tableProcessTypes = await getTableOptimizingTypes({ ...sourceData })
@@ -99,6 +101,7 @@ async function getQueryDataDictList() {
 
   actionTypeList.value = typesList
   statusTypeList.value = status
+  taskStatusTypeList.value = Object.entries(TASK_STATUS_CONFIG).map(([key, value]) => ({ label: value.title, value: key }))
 }
 
 async function refreshOptimizingProcesses() {
@@ -194,22 +197,23 @@ async function refreshOptimizingTasks() {
     const params = {
       ...sourceData,
       processId: processId.value,
+      status: taskStatusType.value || '',
       page: breadcrumbPagination.current,
       pageSize: breadcrumbPagination.pageSize,
     }
     const result = await getTasksByOptimizingProcessId(params)
     const { list, total } = result
     breadcrumbPagination.total = total
-    list.forEach((p: BreadcrumbOptimizingItem) => {
-      p.startTime = p.startTime ? dateFormat(p.startTime) : '-'
-      p.endTime = p.endTime ? dateFormat(p.endTime) : '-'
-      p.formatCostTime = p.costTime ? formatMS2Time(p.costTime) : '-'
-      p.thread = p.optimizerToken ? `(${p.threadId})${p.optimizerToken}` : '-'
-      p.partitionData = p.partitionData ? p.partitionData : '-'
-      p.inputFilesDesc = `${bytesToSize(p.inputFiles.totalSize)} / ${p.inputFiles.fileCnt}`
-      p.outputFilesDesc = `${bytesToSize(p.outputFiles.totalSize)} / ${p.outputFiles.fileCnt}`
-      breadcrumbDataSource.push(p)
-    })
+    breadcrumbDataSource.push(...(list || []).map((p: BreadcrumbOptimizingItem) => ({
+      ...p,
+      startTime: p.startTime ? dateFormat(p.startTime) : '-',
+      endTime: p.endTime ? dateFormat(p.endTime) : '-',
+      formatCostTime: p.costTime ? formatMS2Time(p.costTime) : '-',
+      thread: p.optimizerToken ? `(${p.threadId})${p.optimizerToken}` : '-',
+      partitionData: p.partitionData ? p.partitionData : '-',
+      inputFilesDesc: `${bytesToSize(p.inputFiles.totalSize)} / ${p.inputFiles.fileCnt}`,
+      outputFilesDesc: `${bytesToSize(p.outputFiles.totalSize)} / ${p.outputFiles.fileCnt}`,
+    })))
   }
   catch (error) {
   }
@@ -224,7 +228,13 @@ function toggleBreadcrumb(rowProcessId: number, status: string) {
   hasBreadcrumb.value = !hasBreadcrumb.value
   if (hasBreadcrumb.value) {
     breadcrumbPagination.current = 1
+    taskStatusType.value = undefined
   }
+  refresh()
+}
+
+function changeTaskStatus() {
+  breadcrumbPagination.current = 1
   refresh()
 }
 
@@ -320,6 +330,12 @@ onMounted(() => {
     <template v-else>
       <a-row>
         <a-col :span="18">
+          <a-space class="filter-form g-mb-0">
+            <a-select
+              v-model:value="taskStatusType" allow-clear placeholder="Status" :options="taskStatusTypeList"
+              style="min-width: 150px;" @change="changeTaskStatus"
+            />
+          </a-space>
           <a-breadcrumb separator=">">
             <a-breadcrumb-item class="text-active" @click="toggleBreadcrumb">
               All

@@ -355,6 +355,7 @@ export default defineComponent({
                 <span class="label">{{ $t('use') }}</span>
                 <a-select
                   v-model:value="curCatalog" style="width: 200px" :options="catalogOptions"
+                  :show-search="true" option-filter-prop="label"
                   @change="changeUseCatalog"
                 />
               </div>

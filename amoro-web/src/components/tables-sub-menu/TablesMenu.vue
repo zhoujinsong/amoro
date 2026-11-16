@@ -292,6 +292,8 @@ export default defineComponent({
         :options="catalogOptions"
         :loading="catalogLoading"
         :get-popup-container="getPopupContainer"
+        :show-search="true"
+        option-filter-prop="label"
         class="theme-dark"
         @change="catalogChange"
       />

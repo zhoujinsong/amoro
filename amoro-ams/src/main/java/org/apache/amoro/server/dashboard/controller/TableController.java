@@ -36,6 +36,7 @@ import org.apache.amoro.hive.utils.UpgradeHiveTableUtil;
 import org.apache.amoro.mixed.CatalogLoader;
 import org.apache.amoro.optimizing.plan.AbstractOptimizingEvaluator;
 import org.apache.amoro.process.ProcessStatus;
+import org.apache.amoro.process.ProcessTaskStatus;
 import org.apache.amoro.properties.CatalogMetaProperties;
 import org.apache.amoro.properties.HiveTableProperties;
 import org.apache.amoro.server.catalog.CatalogManager;
@@ -426,6 +427,7 @@ public class TableController {
     String processId = ctx.pathParam("processId");
     Integer page = ctx.queryParamAsClass("page", Integer.class).getOrDefault(1);
     Integer pageSize = ctx.queryParamAsClass("pageSize", Integer.class).getOrDefault(20);
+    String status = ctx.queryParam("status");
 
     int offset = (page - 1) * pageSize;
     int limit = pageSize;
@@ -436,6 +438,16 @@ public class TableController {
     List<OptimizingTaskInfo> optimizingTaskInfos =
         tableDescriptor.getOptimizingProcessTaskInfos(
             tableIdentifier.buildTableIdentifier(), processId);
+
+    // Filter in memory for now; push the predicate down to the mapper once the query supports it.
+    ProcessTaskStatus taskStatus =
+        StringUtils.isBlank(status) ? null : ProcessTaskStatus.valueOf(status);
+    if (taskStatus != null) {
+      optimizingTaskInfos =
+          optimizingTaskInfos.stream()
+              .filter(taskInfo -> taskInfo.getStatus() == taskStatus)
+              .collect(Collectors.toList());
+    }
 
     PageResult<OptimizingTaskInfo> pageResult = PageResult.of(optimizingTaskInfos, offset, limit);
     ctx.json(OkResponse.of(pageResult));

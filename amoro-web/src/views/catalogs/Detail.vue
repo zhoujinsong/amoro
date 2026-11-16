@@ -216,7 +216,7 @@ function initData() {
 }
 async function getOptimizerGroupList() {
   const res = await getResourceGroupsListAPI()
-  const list = (res || []).map((item: IIOptimizeGroupItem) => ({ lable: item.resourceGroup.name, value: item.resourceGroup.name }))
+  const list = (res || []).map((item: IIOptimizeGroupItem) => ({ label: item.resourceGroup.name, value: item.resourceGroup.name }))
 
   if (list.length === 0) {
     Modal.confirm({
@@ -497,7 +497,7 @@ async function validatorName(_: any, value: string) {
   if (!value) {
     return Promise.reject(new Error(t('inputPlaceholder')))
   }
-  if ((/^[a-z][\w-]*$/i.test(value))) {
+  if ((/^[a-z0-9][\w-]*$/i.test(value))) {
     return Promise.resolve()
   }
   else {
@@ -674,7 +674,7 @@ onMounted(() => {
           >
             <a-select
               v-if="isEdit" v-model:value="formState.catalog.optimizerGroup" :options="optimizerGroupList"
-              :placeholder="placeholder.selectPh"
+              :placeholder="placeholder.selectPh" :show-search="true" option-filter-prop="label"
             />
             <span v-else>{{ formState.catalog.optimizerGroup }}</span>
           </a-form-item>

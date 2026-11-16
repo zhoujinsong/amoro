@@ -76,7 +76,7 @@ async function fetchOptimizerAction() {
 
 async function getOptimizerGroupList() {
   const res = await getResourceGroupsListAPI()
-  const list = (res || []).map((item: IIOptimizeGroupItem) => ({ lable: item.resourceGroup.name, value: item.resourceGroup.name }))
+  const list = (res || []).map((item: IIOptimizeGroupItem) => ({ label: item.resourceGroup.name, value: item.resourceGroup.name }))
   optimizerGroupList.value = list
 }
 
@@ -181,6 +181,7 @@ onMounted(async () => {
     <a-space class="filter-form">
       <a-select
         v-model:value="optimizerGroup" allow-clear placeholder="Optimizer group" :options="optimizerGroupList"
+        :show-search="true" option-filter-prop="label"
         style="min-width: 150px;"
       />
 
